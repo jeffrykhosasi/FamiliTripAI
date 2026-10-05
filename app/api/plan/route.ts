@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenAI } from '@google/genai';
 import { supabase } from '@/lib/db';
+import { getCurrentUser } from '@/lib/get-user';
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
@@ -43,12 +44,23 @@ Include 3-5 activities per day. Realistic for kids and grandparents.`;
 
 export async function POST(req: Request) {
   try {
+    // Require signed-in user
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Please sign in' }, { status: 401 });
+    }
+
     const { prompt } = await req.json();
     const plan = await tryGenerate(prompt);
 
     const { data, error } = await supabase
       .from('trips')
-      .insert({ prompt, plan, status: 'draft' })
+      .insert({
+        prompt,
+        plan,
+        status: 'draft',
+        user_id: user.id,  // ← link to user
+      })
       .select()
       .single();
 
