@@ -53,7 +53,6 @@ export default function TripPage() {
 
   async function confirmAndBook() {
     // Save first, then go to booking page (we'll build that next)
-    await saveChanges();
     window.location.href = `/book/${id}`;
   }
 
