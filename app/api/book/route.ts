@@ -5,7 +5,6 @@ export async function POST(req: Request) {
   try {
     const { tripId } = await req.json();
 
-    // Load the trip to get the plan
     const { data: trip, error: tripError } = await supabase
       .from('trips')
       .select('*')
@@ -16,9 +15,12 @@ export async function POST(req: Request) {
       throw new Error('Trip not found');
     }
 
-    // Flatten all activities into a list of "bookings"
-    const bookings = trip.plan.days.flatMap((day: any) =>
-      day.activities.map((activity: any) => ({
+    const plan = trip.plan;
+    const days = plan.dailyPlans || plan.days || [];
+
+    // Flatten all activities into bookings
+    const bookings = days.flatMap((day: any) =>
+      (day.activities || []).map((activity: any) => ({
         trip_id: tripId,
         type: 'activity',
         details: {
@@ -27,20 +29,23 @@ export async function POST(req: Request) {
           time: activity.time,
           title: activity.title,
           description: activity.description,
+          cost_usd: activity.cost_usd,
         },
         confirmation_id:
           'CONF-' + Math.random().toString(36).substring(2, 8).toUpperCase(),
       }))
     );
 
-    // Insert bookings into DB
+    if (bookings.length === 0) {
+      throw new Error('No activities to book');
+    }
+
     const { error: insertError } = await supabase
       .from('bookings')
       .insert(bookings);
 
     if (insertError) throw new Error(insertError.message);
 
-    // Update trip status
     await supabase
       .from('trips')
       .update({ status: 'booked' })

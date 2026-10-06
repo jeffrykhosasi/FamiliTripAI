@@ -24,11 +24,11 @@ export default function BookPage() {
           setError(data.error);
           setStatus('error');
         } else {
-          setBookings(data.bookings);
+          setBookings(data.bookings || []);
           setStatus('done');
         }
       } catch (e: any) {
-        setError(e.message);
+        setError(e.message || 'Something went wrong');
         setStatus('error');
       }
     }
@@ -39,10 +39,13 @@ export default function BookPage() {
     return (
       <main className="min-h-screen bg-gradient-to-br from-sky-50 to-indigo-100 flex items-center justify-center p-8">
         <div className="bg-white rounded-2xl shadow-xl p-12 text-center max-w-md">
-          <div className="animate-spin w-16 h-16 border-4 border-indigo-200 border-t-indigo-600 rounded-full mx-auto mb-6" />
+          <div
+            className="animate-spin w-16 h-16 border-4 border-gray-200 rounded-full mx-auto mb-6"
+            style={{ borderTopColor: '#0d4d3d' }}
+          />
           <h1 className="text-2xl font-bold mb-2">Booking everything...</h1>
           <p className="text-gray-500">
-            We're contacting restaurants, booking tickets, and reserving your activities.
+            We're confirming your activities and reservations.
           </p>
         </div>
       </main>
@@ -51,19 +54,39 @@ export default function BookPage() {
 
   if (status === 'error') {
     return (
-      <main className="min-h-screen flex items-center justify-center p-8">
+      <main className="min-h-screen flex items-center justify-center p-8 bg-gray-50">
         <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md text-center">
           <p className="text-4xl mb-4">😔</p>
-          <h1 className="text-xl font-bold mb-2">Something went wrong</h1>
-          <p className="text-red-600 text-sm">{error}</p>
+          <h1 className="text-xl font-bold mb-2">Booking failed</h1>
+          <p className="text-red-600 text-sm mb-4">{error}</p>
+          <a
+            href={`/plan/${id}`}
+            className="inline-block border border-gray-300 px-4 py-2 rounded-lg text-sm"
+          >
+            ← Back to trip
+          </a>
         </div>
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-sky-50 to-indigo-100 p-8">
-      <div className="max-w-3xl mx-auto">
+    <main className="min-h-screen bg-gradient-to-br from-sky-50 to-indigo-100">
+      <nav className="bg-white border-b border-gray-200">
+        <div className="max-w-3xl mx-auto px-6 py-4 flex items-center justify-between">
+          <a href="/" className="text-xl font-bold" style={{ color: '#0d4d3d' }}>
+            FamilyTrip
+          </a>
+          <a
+            href={`/plan/${id}`}
+            className="px-3 py-1.5 rounded-lg border border-gray-300 hover:bg-gray-50 text-sm"
+          >
+            ← Back to trip
+          </a>
+        </div>
+      </nav>
+
+      <div className="max-w-3xl mx-auto p-8">
         <div className="bg-white rounded-2xl shadow-xl p-8 text-center mb-6">
           <p className="text-5xl mb-4">🎉</p>
           <h1 className="text-3xl font-bold mb-2">All booked!</h1>
@@ -71,12 +94,15 @@ export default function BookPage() {
             {bookings.length} activities confirmed for your trip.
           </p>
           <p className="text-sm text-gray-400">
-            Your WhatsApp assistant is ready to keep you on track.
+            Your trip assistant is ready to keep you on track.
           </p>
         </div>
 
         <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
           <h2 className="font-semibold mb-4">Booking confirmations</h2>
+          {bookings.length === 0 && (
+            <p className="text-sm text-gray-500">No bookings found.</p>
+          )}
           {bookings.map((b, i) => (
             <div
               key={i}
@@ -84,8 +110,11 @@ export default function BookPage() {
             >
               <div>
                 <p className="font-medium text-sm">
-                  Day {b.details.day} · {b.details.time} — {b.details.title}
+                  Day {b.details?.day} · {b.details?.time} — {b.details?.title}
                 </p>
+                {b.details?.cost_usd ? (
+                  <p className="text-xs text-gray-500">${b.details.cost_usd}</p>
+                ) : null}
               </div>
               <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded font-mono">
                 {b.confirmation_id}
@@ -94,18 +123,41 @@ export default function BookPage() {
           ))}
         </div>
 
+        {/* Telegram connect — the magic moment */}
+        <div className="bg-white rounded-2xl shadow-xl p-6 mb-6 text-center">
+          <p className="text-4xl mb-3">📱</p>
+          <h2 className="font-bold text-lg mb-1">Meet your trip assistant</h2>
+          <p className="text-sm text-gray-600 mb-4">
+            Get reminders, ask questions, and send photos — all through Telegram.
+          </p>
+          <a
+            href={`https://t.me/familytrip_ai_bot?start=${id}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-block text-white px-8 py-3 rounded-lg font-semibold"
+            style={{ backgroundColor: '#0088cc' }}
+          >
+            💬 Open in Telegram
+          </a>
+          <p className="text-xs text-gray-400 mt-3">
+            Tap START in Telegram to connect your trip.
+          </p>
+        </div>
+
         <div className="bg-white rounded-2xl shadow-xl p-6">
           <h2 className="font-semibold mb-4">Next steps</h2>
-          <div className="flex gap-3">
+          <div className="flex flex-col sm:flex-row gap-3">
             <a
               href={`/checklist/${id}`}
-              className="flex-1 bg-indigo-600 text-white py-3 rounded-lg font-semibold text-center"
+              className="flex-1 text-white py-3 rounded-lg font-semibold text-center"
+              style={{ backgroundColor: '#0d4d3d' }}
             >
               📋 Family checklist
             </a>
             <a
               href={`/recap/${id}`}
-              className="flex-1 border border-indigo-600 text-indigo-600 py-3 rounded-lg font-semibold text-center"
+              className="flex-1 border-2 py-3 rounded-lg font-semibold text-center"
+              style={{ borderColor: '#0d4d3d', color: '#0d4d3d' }}
             >
               🎬 Trip recap
             </a>

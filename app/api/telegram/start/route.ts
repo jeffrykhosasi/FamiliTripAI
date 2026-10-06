@@ -3,9 +3,14 @@ import { getBot } from '@/lib/telegram';
 
 export async function GET() {
   try {
-    getBot(); // no await
-    return NextResponse.json({ ok: true });
+    const bot = getBot();
+    return NextResponse.json({ 
+      ok: true, 
+      message: 'Bot is running',
+      hasBot: !!bot,
+    });
   } catch (error: any) {
+    console.error('Bot start error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-}
+}   

@@ -4,10 +4,10 @@ import { GoogleGenAI } from '@google/genai';
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
 const MODELS = [
-  'gemini-3.8-flash',
   'gemini-3.5-flash',
   'gemini-3.5-flash-lite',
   'gemini-2.5-flash-lite',
+  'gemini-3.8-flash',
 ];
 
 async function tryGenerate(prompt: string) {
@@ -30,7 +30,10 @@ async function tryGenerate(prompt: string) {
       } catch (err: any) {
         lastError = err;
         const msg = err.message || '';
-        const isBusy = msg.includes('503') || msg.includes('UNAVAILABLE') || msg.includes('429');
+        const isBusy =
+          msg.includes('503') ||
+          msg.includes('UNAVAILABLE') ||
+          msg.includes('429');
         if (!isBusy) throw err;
         await new Promise((r) => setTimeout(r, 1500));
       }
@@ -44,13 +47,35 @@ export async function POST(req: Request) {
   try {
     const { plan } = await req.json();
 
+    if (!plan) {
+      return NextResponse.json({ error: 'No plan provided' }, { status: 400 });
+    }
+
+    // Support both old (days) and new (dailyPlans) schema
+    const days = plan.dailyPlans || plan.days || [];
+
+    const activitiesList = days
+      .flatMap((d: any) =>
+        (d.activities || []).map(
+          (a: any) => `- Day ${d.day || '?'}: ${a.title || 'Activity'} — ${a.description || ''}`
+        )
+      )
+      .join('\n');
+
+    const travelers = (plan.travelers || [])
+      .map((t: any) => `${t.name || 'Traveler'} (${t.role || 'adult'})`)
+      .join(', ');
+
+    const destination = plan.destination || 'the destination';
+    const daysCount = days.length || plan.days || 1;
+
     const prompt = `You are a family trip packing assistant.
 
-Trip: ${plan.destination}
-Travelers: ${plan.travelers.map((t: any) => `${t.name} (${t.role})`).join(', ')}
+Trip: ${daysCount} days in ${destination}
+Travelers: ${travelers || 'Family'}
 
-Here are the planned activities:
-${plan.days.flatMap((d: any) => d.activities.map((a: any) => `- Day ${d.day}: ${a.title} — ${a.description}`)).join('\n')}
+Planned activities:
+${activitiesList || '(no specific activities)'}
 
 Generate a packing checklist for each traveler. Consider:
 - Destination weather (if Tokyo in winter, add coats)
@@ -66,11 +91,16 @@ Return ONLY valid JSON, no markdown:
   }
 }
 
-Each traveler should have 4-7 items. Use their actual names from the trip if provided, otherwise use the roles.`;
+Use the actual traveler names from the trip if provided, otherwise use roles like "Dad", "Mom", "Child", "Grandparent". Each traveler should have 4-7 items.`;
 
     const data = await tryGenerate(prompt);
-    return NextResponse.json({ checklists: data.checklists });
+
+    return NextResponse.json({ checklists: data.checklists || {} });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error('Checklist generate error:', error);
+    return NextResponse.json(
+      { error: error.message || 'Something went wrong' },
+      { status: 500 }
+    );
   }
 }

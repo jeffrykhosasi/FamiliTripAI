@@ -1,35 +1,177 @@
 // lib/telegram.ts
 import { Bot } from 'node-telegram-bot-api';
+import { supabase } from '@/lib/db';
 
-let bot: any = null;
+const globalForBot = globalThis as unknown as {
+  telegramBot: any;
+};
+
+let bot: any = globalForBot.telegramBot || null;
 const userChatIds = new Set<number>();
 
 export function getBot() {
-  if (!bot) {
-    bot = new Bot(process.env.TELEGRAM_BOT_TOKEN!);
-    bot.startPolling();
+  if (bot) return bot;
 
-    bot.on('message', (ctx: any) => {
-      const chatId = ctx.chat.id;
-      const text = (ctx.message?.text || '').toLowerCase();
+  console.log('🤖 Starting Telegram bot...');
+  bot = new Bot(process.env.TELEGRAM_BOT_TOKEN!);
+  bot.startPolling();
+  globalForBot.telegramBot = bot;
 
-      userChatIds.add(chatId);
+  bot.on('message', async (ctx: any) => {
+    const chatId = ctx.chat?.id || ctx.message?.chat?.id;
+    const text = ctx.message?.text || ctx.text || '';
+    const lower = text.toLowerCase();
+    const from = ctx.from || ctx.message?.from || {};
+    const firstName = from.first_name || 'there';
 
-      let reply = "Hi! I'm your trip assistant. Ask me about weather, packing, or flights ✈️";
+    if (!chatId) return;
+    userChatIds.add(chatId);
 
-      if (text.includes('weather')) {
-        reply = 'Tokyo this week: 18-24°C, light rain Tuesday. Pack a light jacket! 🌧️';
-      } else if (text.includes('pack')) {
-        reply = 'Check your family checklist dashboard — every traveler has their own list.';
-      } else if (text.includes('hello') || text.includes('hi') || text.includes('hey')) {
-        reply = 'Hey! Ready for your trip? Ask me about weather, packing, or flights. 🌏';
+    // Reply helper — works with v2 API
+    const reply = async (msg: string) => {
+      try {
+        await bot.api.sendMessage({ chat_id: chatId, text: msg });
+      } catch (e: any) {
+        console.error('Reply failed:', e.message);
+      }
+    };
+
+    // /start TRIP_ID
+    if (text.startsWith('/start')) {
+      const parts = text.split(' ');
+      const tripId = parts[1];
+
+      if (!tripId) {
+        await reply(
+          `Hi ${firstName}! 👋\n\nTo connect a trip, use the link from your booking confirmation page.`
+        );
+        return;
       }
 
-      ctx.reply(reply);
-    });
+      const { data: trip } = await supabase
+        .from('trips')
+        .select('id, destination, start_date, days')
+        .eq('id', tripId)
+        .single();
 
-    console.log('🤖 Telegram bot is running...');
-  }
+      if (!trip) {
+        await reply(`I couldn't find that trip. Please try the link again.`);
+        return;
+      }
+
+      // Delete any existing link for this chat, then insert
+      await supabase.from('telegram_links').delete().eq('telegram_chat_id', chatId);
+
+      const { error: linkError } = await supabase.from('telegram_links').insert({
+        trip_id: tripId,
+        telegram_chat_id: chatId,
+        telegram_username: from.username || null,
+        telegram_first_name: firstName,
+      });
+
+      if (linkError) {
+        console.error('Link save failed:', linkError);
+        await reply(`Sorry, couldn't save: ${linkError.message}`);
+        return;
+      }
+
+      console.log(`✅ Linked chat ${chatId} to trip ${tripId}`);
+
+      await reply(
+        `✨ Hi ${firstName}! I'm your assistant for your ${trip.destination} trip.\n\n` +
+          `Try asking me:\n• "What's my plan?"\n• "What's today?"\n• "Budget"\n\n` +
+          `Or send me a photo 📸`
+      );
+      return;
+    }
+
+    // Look up linked trip
+    const { data: link } = await supabase
+      .from('telegram_links')
+      .select('trip_id')
+      .eq('telegram_chat_id', chatId)
+      .single();
+
+    console.log(`🔍 chat ${chatId} lookup:`, link);
+
+    if (!link) {
+      await reply(
+        `You're not linked to a trip yet. Use the link from your booking page.`
+      );
+      return;
+    }
+
+    const { data: trip } = await supabase
+      .from('trips')
+      .select('*')
+      .eq('id', link.trip_id)
+      .single();
+
+    if (!trip) {
+      await reply(`I lost your trip. Please re-link from the booking page.`);
+      return;
+    }
+
+    const plan = trip.plan;
+    const days = plan.dailyPlans || plan.days || [];
+
+    if (lower.includes('plan') || lower.includes('itinerary')) {
+      const summary = days
+        .map(
+          (d: any) =>
+            `📅 Day ${d.day} — ${d.theme || ''}\n` +
+            (d.activities || [])
+              .slice(0, 3)
+              .map((a: any) => `  • ${a.time} ${a.title}`)
+              .join('\n')
+        )
+        .join('\n\n');
+      await reply(`Your ${trip.destination} itinerary:\n\n${summary}`);
+      return;
+    }
+
+    if (lower.includes('today')) {
+      const start = new Date(trip.start_date);
+      const now = new Date();
+      const dayNum =
+        Math.floor((now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+      const today = days.find((d: any) => d.day === dayNum);
+
+      if (!today) {
+        await reply(
+          `Today isn't a trip day. Trip runs from ${trip.start_date} for ${trip.days} days.`
+        );
+        return;
+      }
+
+      const activities = (today.activities || [])
+        .map((a: any) => `⏰ ${a.time} — ${a.title}\n   ${a.description || ''}`)
+        .join('\n\n');
+
+      await reply(`Today (Day ${today.day}) — ${today.theme || ''}\n\n${activities}`);
+      return;
+    }
+
+    if (lower.includes('budget')) {
+      const b = plan.budgetBreakdown || {};
+      await reply(
+        `Budget:\n🏨 $${b.accommodation || 0}\n🍽️ $${b.food || 0}\n🚇 $${b.transport || 0}\n🎫 $${b.activities || 0}\n🚗 $${b.rentalCar || 0}\n\n💰 Total: $${b.total || 0}`
+      );
+      return;
+    }
+
+    await reply(
+      `I'm your ${trip.destination} trip assistant. Try:\n\n• "What's my plan?"\n• "What's today?"\n• "Budget"`
+    );
+  });
+
+  bot.on('polling_error', (error: any) => {
+    if (!error.message?.includes('409')) {
+      console.log('Telegram polling error:', error.message);
+    }
+  });
+
+  console.log('🤖 Telegram bot is running...');
   return bot;
 }
 

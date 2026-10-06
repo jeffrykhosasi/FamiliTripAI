@@ -26,7 +26,6 @@ export default function ChecklistPage() {
   async function seed() {
     setGenerating(true);
     try {
-      // Load trip plan
       const tripRes = await fetch(`/api/plan/${tripId}`);
       const tripData = await tripRes.json();
       if (tripData.error) {
@@ -35,7 +34,6 @@ export default function ChecklistPage() {
         return;
       }
 
-      // Ask AI to generate checklist
       const res = await fetch('/api/checklist/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -48,7 +46,6 @@ export default function ChecklistPage() {
         return;
       }
 
-      // Save to DB
       await fetch('/api/checklist', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -102,8 +99,38 @@ export default function ChecklistPage() {
   if (loading) return <p className="p-8">Loading checklist...</p>;
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-sky-50 to-indigo-100 p-8">
-      <div className="max-w-4xl mx-auto">
+    <main className="min-h-screen bg-gradient-to-br from-sky-50 to-indigo-100">
+      {/* Top nav */}
+      <nav className="bg-white border-b border-gray-200">
+        <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
+          <a href="/" className="text-xl font-bold" style={{ color: '#0d4d3d' }}>
+            FamilyTrip
+          </a>
+          <div className="flex gap-2 text-sm">
+            <a
+              href={`/plan/${tripId}`}
+              className="px-3 py-1.5 rounded-lg border border-gray-300 hover:bg-gray-50"
+            >
+              ← Back to trip
+            </a>
+            <a
+              href={`/book/${tripId}`}
+              className="px-3 py-1.5 rounded-lg border border-gray-300 hover:bg-gray-50"
+            >
+              Bookings
+            </a>
+            <a
+              href={`/recap/${tripId}`}
+              className="px-3 py-1.5 rounded-lg text-white font-medium"
+              style={{ backgroundColor: '#0d4d3d' }}
+            >
+              🎬 Recap
+            </a>
+          </div>
+        </div>
+      </nav>
+
+      <div className="max-w-4xl mx-auto p-8">
         <div className="bg-white rounded-2xl shadow-xl p-8 mb-6">
           <h1 className="text-3xl font-bold mb-2">Family Packing Dashboard</h1>
           <p className="text-gray-600 mb-4">
@@ -137,7 +164,8 @@ export default function ChecklistPage() {
             <button
               onClick={seed}
               disabled={generating}
-              className="bg-indigo-600 text-white px-6 py-3 rounded-lg font-semibold disabled:opacity-50"
+              className="text-white px-6 py-3 rounded-lg font-semibold disabled:opacity-50"
+              style={{ backgroundColor: '#0d4d3d' }}
             >
               {generating ? '✨ Generating...' : '✨ AI-generate checklist'}
             </button>
@@ -163,7 +191,11 @@ export default function ChecklistPage() {
                       onChange={(e) => toggle(i.id, e.target.checked)}
                       className="w-4 h-4"
                     />
-                    <span className={i.packed ? 'line-through text-gray-400 flex-1' : 'flex-1'}>
+                    <span
+                      className={
+                        i.packed ? 'line-through text-gray-400 flex-1' : 'flex-1'
+                      }
+                    >
                       {i.item}
                     </span>
                     <button
@@ -201,7 +233,8 @@ export default function ChecklistPage() {
               />
               <button
                 onClick={addItem}
-                className="bg-indigo-600 text-white px-6 py-2 rounded-lg font-semibold"
+                className="text-white px-6 py-2 rounded-lg font-semibold"
+                style={{ backgroundColor: '#0d4d3d' }}
               >
                 Add
               </button>
