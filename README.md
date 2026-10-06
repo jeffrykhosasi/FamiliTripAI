@@ -34,3 +34,32 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+
+# FamilyTrip AI 🌏
+
+AI-powered family trip planner with Telegram assistant and photo recap.
+
+## What it does
+
+- **AI itinerary**: Describe your trip or fill a form → get a full day-by-day plan
+- **Budget-aware**: Prices for hotels, food, transport, activities — split by category
+- **Transport comparison**: Car vs public transit for every activity
+- **Parents' day off**: Kids supervised, parents relax — full parallel track
+- **Family checklist**: AI-generated packing list per traveler
+- **Telegram assistant**: Ask "what's today?" and get real answers
+- **Photo recap**: Send photos to the bot → get an Instagram-style reel
+
+## Local setup
+
+### Prerequisites
+
+- **Node.js 18+** ([download](https://nodejs.org))
+- **Git** ([download](https://git-scm.com))
+
+### 1. Clone and install
+
+```bash
+git clone https://github.com/jeffrykhosasi/FamiliTripAI.git
+cd FamiliTripAI
+npm install
