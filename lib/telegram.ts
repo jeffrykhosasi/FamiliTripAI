@@ -35,7 +35,107 @@ export function getBot() {
         console.error('Reply failed:', e.message);
       }
     };
+    // ─── Handle photo messages ───
+    if (ctx.message?.photo || ctx.photo) {
+      const photos = ctx.message?.photo || ctx.photo || [];
+      const largest = photos[photos.length - 1]; // Last = highest resolution
+      const fileId = largest?.file_id;
+      const caption = ctx.message?.caption || ctx.caption || '';
 
+      if (!fileId) {
+        await reply(`Hmm, I couldn't read that photo. Try again?`);
+        return;
+      }
+
+      // Look up the user's linked trip
+      const { data: link } = await supabase
+        .from('telegram_links')
+        .select('trip_id')
+        .eq('telegram_chat_id', chatId)
+        .single();
+
+      if (!link) {
+        await reply(
+          `You're not linked to a trip yet. Use the link from your booking page.`
+        );
+        return;
+      }
+
+      try {
+        // Get the file path from Telegram
+        const fileInfo: any = await bot.api.getFile({ file_id: fileId });
+        const filePath = fileInfo?.result?.file_path || fileInfo?.file_path;
+
+        if (!filePath) {
+          await reply(`Couldn't fetch the photo from Telegram. Try again.`);
+          return;
+        }
+
+        // Download from Telegram
+        const fileUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${filePath}`;
+        const imageRes = await fetch(fileUrl);
+
+        if (!imageRes.ok) {
+          await reply(`Couldn't download the photo. Try again.`);
+          return;
+        }
+
+        const arrayBuffer = await imageRes.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+
+        // Upload to Supabase Storage
+        const filename = `${fileId}.jpg`;
+        const storagePath = `${link.trip_id}/${Date.now()}-${filename}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('trip-photos')
+          .upload(storagePath, buffer, {
+            contentType: 'image/jpeg',
+            upsert: false,
+          });
+
+        if (uploadError) {
+          console.error('Storage upload failed:', uploadError);
+          await reply(`Upload failed: ${uploadError.message}`);
+          return;
+        }
+
+        const { data: urlData } = supabase.storage
+          .from('trip-photos')
+          .getPublicUrl(storagePath);
+
+        // Save to photos table
+        const { error: dbError } = await supabase.from('photos').insert({
+          trip_id: link.trip_id,
+          url: urlData.publicUrl,
+          caption: caption || null,
+          source: 'telegram',
+        });
+
+        if (dbError) {
+          console.error('Photo DB insert failed:', dbError);
+          await reply(`Saved to storage but failed to record: ${dbError.message}`);
+          return;
+        }
+
+        // Count total photos
+        const { count } = await supabase
+          .from('photos')
+          .select('*', { count: 'exact', head: true })
+          .eq('trip_id', link.trip_id);
+
+        console.log(`📸 Photo saved for trip ${link.trip_id}. Total: ${count}`);
+
+        await reply(
+          `📸 Saved! You now have ${count} photo${count === 1 ? '' : 's'} in your recap.\n\nSend more, or type "recap" to view.`
+        );
+      } catch (e: any) {
+        console.error('Photo handler error:', e);
+        await reply(`Something went wrong: ${e.message}`);
+      }
+      return;
+    }
+    
     // /start TRIP_ID
     if (text.startsWith('/start')) {
       const parts = text.split(' ');
