@@ -65,13 +65,20 @@ export default function TripPage() {
 
   async function saveChanges() {
     setSaving(true);
-    await fetch(`/api/plan/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ plan }),
-    });
+    try {
+      const res = await fetch(`/api/plan/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan }),
+      });
+      if (!res.ok) throw new Error('Save failed');
+      setSaved(true);
+      // Reset "Saved" indicator after 2 seconds
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e: any) {
+      alert('Could not save: ' + e.message);
+    }
     setSaving(false);
-    setSaved(true);
   }
 
   async function removeRentalCar() {
@@ -126,12 +133,26 @@ export default function TripPage() {
     <div className="min-h-screen bg-gray-50">
       <nav className="bg-white border-b border-gray-200">
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-          <a href="/" className="text-xl font-bold" style={{ color: '#0d4d3d' }}>
-            FamilyTrip
-          </a>
-          <span className="text-sm text-gray-500">
-            {plan.destination} · {plan.days} days
-          </span>
+          <div className="flex items-center gap-8">
+            <a href="/" className="text-xl font-bold" style={{ color: '#0d4d3d' }}>
+              FamilyTrip
+            </a>
+            <div className="hidden md:flex gap-6 text-sm font-medium text-gray-700">
+              <a href="/" className="hover:text-gray-900">Plan new trip</a>
+              <a href="/trips" className="hover:text-gray-900">My trips</a>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-gray-500 hidden sm:inline">
+              {plan.destination} · {plan.days} days
+            </span>
+            <a
+              href="/trips"
+              className="px-3 py-1.5 rounded-lg border border-gray-300 hover:bg-gray-50 text-sm"
+            >
+              🗂 My trips
+            </a>
+          </div>
         </div>
       </nav>
 
@@ -444,6 +465,12 @@ export default function TripPage() {
 
         {/* Sticky action bar */}
         <div className="bg-white rounded-2xl shadow-sm p-4 flex gap-3 sticky bottom-4">
+          <a
+            href="/trips"
+            className="px-4 py-3 rounded-lg border border-gray-300 font-semibold text-sm hover:bg-gray-50 whitespace-nowrap"
+          >
+            🗂 My trips
+          </a>
           <button
             onClick={saveChanges}
             disabled={saving}

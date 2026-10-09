@@ -96,15 +96,21 @@ export default function Home() {
               FamilyTrip
             </span>
             <div className="hidden md:flex gap-7 text-sm font-medium text-gray-700">
-              <a href="#" className="hover:text-gray-900 text-gray-900 border-b-2 pb-1" style={{ borderColor: '#0d4d3d' }}>
-                Holidays
+              <a
+                href="/"
+                className="text-gray-900 border-b-2 pb-1"
+                style={{ borderColor: '#0d4d3d' }}
+              >
+                Plan new trip
               </a>
-              <a href="#" className="hover:text-gray-900">Membership</a>
+              <a href="/trips" className="hover:text-gray-900">
+                My trips
+              </a>
             </div>
           </div>
           <div className="flex items-center gap-3">
             {user ? (
-              <>
+              <>           
                 <span className="text-sm text-gray-600 hidden sm:inline">{user.email}</span>
                 <button
                   onClick={signOut}

@@ -108,10 +108,10 @@ export default function ChecklistPage() {
           </a>
           <div className="flex gap-2 text-sm">
             <a
-              href={`/plan/${tripId}`}
+              href={`/book/${tripId}`}
               className="px-3 py-1.5 rounded-lg border border-gray-300 hover:bg-gray-50"
             >
-              ← Back to trip
+              ← Confirmation
             </a>
             <a
               href={`/book/${tripId}`}
@@ -125,6 +125,12 @@ export default function ChecklistPage() {
               style={{ backgroundColor: '#0d4d3d' }}
             >
               🎬 Recap
+            </a>
+            <a
+              href={`/trips`}
+              className="px-3 py-1.5 rounded-lg border border-gray-300 hover:bg-gray-50"
+            >
+              🗂 My trips
             </a>
           </div>
         </div>

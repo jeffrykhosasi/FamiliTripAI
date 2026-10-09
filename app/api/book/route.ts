@@ -15,10 +15,25 @@ export async function POST(req: Request) {
       throw new Error('Trip not found');
     }
 
+    // If already booked, return existing bookings
+    if (trip.status === 'booked') {
+      const { data: existing } = await supabase
+        .from('bookings')
+        .select('*')
+        .eq('trip_id', tripId);
+
+      return NextResponse.json({
+        ok: true,
+        count: existing?.length || 0,
+        bookings: existing || [],
+        alreadyBooked: true,
+      });
+    }
+
+    // First-time booking — create them
     const plan = trip.plan;
     const days = plan.dailyPlans || plan.days || [];
 
-    // Flatten all activities into bookings
     const bookings = days.flatMap((day: any) =>
       (day.activities || []).map((activity: any) => ({
         trip_id: tripId,
@@ -55,6 +70,7 @@ export async function POST(req: Request) {
       ok: true,
       count: bookings.length,
       bookings,
+      alreadyBooked: false,
     });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });

@@ -97,10 +97,10 @@ export default function RecapPage() {
   return (
     <main className="min-h-screen bg-gradient-to-br from-purple-900 via-indigo-900 to-pink-900 p-8 flex items-center justify-center relative">
       <a
-        href={`/photos/${id}`}
+        href={`/book/${id}`}
         className="absolute top-4 left-4 bg-white/20 backdrop-blur text-white px-4 py-2 rounded-full text-sm hover:bg-white/30 z-10"
       >
-        ← Back to photos
+        ← Back to confirmation
       </a>
 
       <div className="w-full max-w-md">

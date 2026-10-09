@@ -60,10 +60,10 @@ export default function BookPage() {
           <h1 className="text-xl font-bold mb-2">Booking failed</h1>
           <p className="text-red-600 text-sm mb-4">{error}</p>
           <a
-            href={`/plan/${id}`}
-            className="inline-block border border-gray-300 px-4 py-2 rounded-lg text-sm"
+            href={`/trips`}
+            className="px-3 py-1.5 rounded-lg border border-gray-300 hover:bg-gray-50 text-sm"
           >
-            ← Back to trip
+            ← My trips
           </a>
         </div>
       </main>
@@ -144,8 +144,22 @@ export default function BookPage() {
           </p>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-xl p-6">
-          <h2 className="font-semibold mb-4">Next steps</h2>
+          <div className="bg-white rounded-2xl shadow-xl p-6">
+            <h2 className="font-semibold mb-4">Next steps</h2>
+                    <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
+            <h2 className="font-semibold mb-2">📸 Your trip photos</h2>
+            <p className="text-sm text-gray-600 mb-3">
+              Send photos to your Telegram bot during the trip. They'll appear here.
+            </p>
+            <a
+              href={`/photos/${id}`}
+              className="inline-block text-white px-6 py-3 rounded-lg font-semibold"
+              style={{ backgroundColor: '#0d4d3d' }}
+            >
+              View photos →
+            </a>
+          </div>
+
           <div className="flex flex-col sm:flex-row gap-3">
             <a
               href={`/checklist/${id}`}
