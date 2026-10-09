@@ -63,3 +63,11 @@ AI-powered family trip planner with Telegram assistant and photo recap.
 git clone https://github.com/jeffrykhosasi/FamiliTripAI.git
 cd FamiliTripAI
 npm install
+
+### Env template
+GEMINI_API_KEY=your_key_here
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_KEY=your_service_role_key
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_publishable_key
+TELEGRAM_BOT_TOKEN=your_bot_token
+NEXT_PUBLIC_APP_URL=http://localhost:3000

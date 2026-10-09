@@ -293,7 +293,7 @@ export default function Home() {
                       </label>
                       <div className="flex items-center gap-3">
                         <span className="text-lg font-semibold whitespace-nowrap">
-                          ${form.budget.toLocaleString()}
+                          ${form.budget.toLocaleString('en-US')}
                         </span>
                         <input
                           type="range"
