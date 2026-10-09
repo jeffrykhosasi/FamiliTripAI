@@ -7,7 +7,6 @@ const MODELS = [
   'gemini-3.5-flash',
   'gemini-3.5-flash-lite',
   'gemini-2.5-flash-lite',
-  'gemini-3.8-flash',
 ];
 
 async function tryGenerate(prompt: string) {
@@ -43,6 +42,21 @@ async function tryGenerate(prompt: string) {
   throw lastError;
 }
 
+// Deterministic naming for travelers
+function buildNames(
+  count: number,
+  pair: [string, string],
+  fallbackPrefix: string
+): string[] {
+  const names: string[] = [];
+  if (count >= 1) names.push(pair[0]);
+  if (count >= 2) names.push(pair[1]);
+  for (let i = 3; i <= count; i++) {
+    names.push(`${fallbackPrefix} ${i}`);
+  }
+  return names;
+}
+
 export async function POST(req: Request) {
   try {
     const { plan } = await req.json();
@@ -57,45 +71,81 @@ export async function POST(req: Request) {
     const activitiesList = days
       .flatMap((d: any) =>
         (d.activities || []).map(
-          (a: any) => `- Day ${d.day || '?'}: ${a.title || 'Activity'} — ${a.description || ''}`
+          (a: any) =>
+            `- Day ${d.day || '?'}: ${a.title || 'Activity'} — ${a.description || ''}`
         )
       )
       .join('\n');
 
-    const travelers = (plan.travelers || [])
-      .map((t: any) => `${t.name || 'Traveler'} (${t.role || 'adult'})`)
-      .join(', ');
+    // Deterministic naming based on traveler counts
+    const travelers = plan.travelers || [];
+    const adults = travelers.filter((t: any) => t.role === 'adult').length || 1;
+    const kids = travelers.filter((t: any) => t.role === 'kid').length || 0;
+    const seniors = travelers.filter((t: any) => t.role === 'elderly').length || 0;
 
+    const adultNames = buildNames(adults, ['Dad', 'Mom'], 'Adult');
+    const kidNames = buildNames(kids, ['Kid 1', 'Kid 2'], 'Kid');
+    const seniorNames = buildNames(seniors, ['Grandpa', 'Grandma'], 'Senior');
+
+    const travelerNames = [...adultNames, ...kidNames, ...seniorNames];
     const destination = plan.destination || 'the destination';
     const daysCount = days.length || plan.days || 1;
 
     const prompt = `You are a family trip packing assistant.
 
 Trip: ${daysCount} days in ${destination}
-Travelers: ${travelers || 'Family'}
+Travelers (use EXACTLY these names as JSON keys, no others): ${travelerNames.join(', ')}
 
 Planned activities:
 ${activitiesList || '(no specific activities)'}
 
-Generate a packing checklist for each traveler. Consider:
-- Destination weather (if Tokyo in winter, add coats)
-- Activities (if hiking, add shoes; if beach, add swimwear)
-- Age-specific needs (kids need entertainment, grandparents need medications)
+Generate a packing checklist for EACH traveler listed above. Use the EXACT names given — do not invent new names.
+
+Consider:
+- Destination weather (if cold, add coats)
+- Activities (if hiking, add shoes)
+- Age-specific needs (kids need entertainment, seniors need medications)
 - Travel documents (passports, visas)
 
 Return ONLY valid JSON, no markdown:
 {
   "checklists": {
-    "Dad": ["item1", "item2"],
-    "Mom": ["item1", "item2"]
+    "${adultNames[0] || 'Dad'}": ["item1", "item2"],
+    "${adultNames[1] || 'Mom'}": ["item1", "item2"],
+    "${kidNames[0] || 'Kid 1'}": ["item1", "item2"],
+    "${seniorNames[0] || 'Grandpa'}": ["item1", "item2"]
   }
 }
 
-Use the actual traveler names from the trip if provided, otherwise use roles like "Dad", "Mom", "Child", "Grandparent". Each traveler should have 4-7 items.`;
+Each traveler should have 4-6 items. Use the exact names from the list as the JSON keys.`;
 
     const data = await tryGenerate(prompt);
 
-    return NextResponse.json({ checklists: data.checklists || {} });
+    // Validate the response uses our names, not AI-invented ones
+    const validNames = new Set(travelerNames);
+    const cleanedChecklists: Record<string, string[]> = {};
+
+    Object.entries(data.checklists || {}).forEach(([name, items]: any) => {
+      // If AI returned a name we didn't ask for, merge it into the closest match
+      if (validNames.has(name)) {
+        cleanedChecklists[name] = items;
+      } else {
+        // Find the first unused valid name
+        const unused = travelerNames.find((n) => !cleanedChecklists[n]);
+        if (unused) {
+          cleanedChecklists[unused] = items;
+        }
+      }
+    });
+
+    // Make sure all travelers have an entry
+    travelerNames.forEach((name) => {
+      if (!cleanedChecklists[name]) {
+        cleanedChecklists[name] = ['Passport', 'Phone + charger', 'Travel documents'];
+      }
+    });
+
+    return NextResponse.json({ checklists: cleanedChecklists });
   } catch (error: any) {
     console.error('Checklist generate error:', error);
     return NextResponse.json(
