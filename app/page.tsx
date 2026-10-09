@@ -48,8 +48,20 @@ export default function Home() {
   }
 
   async function handleGenerate() {
+     // Validate dates
+    const today = new Date().toISOString().split('T')[0];
+     if (form.startDate < today) {
+      setError('Departure date cannot be in the past.');
+      return;
+    }
+    if (form.returnDate <= form.startDate) {
+      setError('Return date must be after departure date.');
+      return;
+    }
+
     setLoading(true);
     setError('');
+    
     try {
       const payload =
         mode === 'form'
@@ -194,7 +206,17 @@ export default function Home() {
                         <input
                           type="date"
                           value={form.startDate}
-                          onChange={(e) => update('startDate', e.target.value)}
+                          min={new Date().toISOString().split('T')[0]}
+                          onChange={(e) => {
+                            const newStart = e.target.value;
+                            update('startDate', newStart);
+                            // Auto-bump return date if it's now before start
+                            if (form.returnDate && form.returnDate <= newStart) {
+                              const next = new Date(newStart);
+                              next.setDate(next.getDate() + 1);
+                              update('returnDate', next.toISOString().split('T')[0]);
+                            }
+                          }}
                           className="w-full text-lg font-semibold outline-none"
                         />
                       </div>
@@ -216,6 +238,11 @@ export default function Home() {
                         <input
                           type="date"
                           value={form.returnDate}
+                          min={(() => {
+                            const d = new Date(form.startDate);
+                            d.setDate(d.getDate() + 1);
+                            return d.toISOString().split('T')[0];
+                          })()}
                           onChange={(e) => update('returnDate', e.target.value)}
                           className="w-full text-lg font-semibold outline-none"
                         />
