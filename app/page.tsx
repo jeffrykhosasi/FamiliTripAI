@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase-browser';
+import AirportInput from '@/components/AirportInput';
 
 type Mode = 'form' | 'prompt';
 
@@ -12,19 +13,18 @@ export default function Home() {
   const [mode, setMode] = useState<Mode>('form');
   const supabase = createClient();
 
-  const [prompt, setPrompt] = useState(
-    '5 days in Tokyo with 2 kids and my parents. We want to see Mt Fuji, eat at local ramen shops, and take it easy — my mother has knee problems.'
-  );
+  const [prompt, setPrompt] = useState('');
 
+  // Compute sensible default dates (today + 30 days, today + 35 days)
   const [form, setForm] = useState({
-    leavingFrom: 'Jakarta',
-    destination: 'Tokyo',
-    startDate: '2026-08-28',
-    returnDate: '2026-09-01',
-    adults: 2,
-    kids: 2,
-    elderly: 2,
-    budget: 60000,
+    leavingFrom: '',
+    destination: '',
+    startDate: '',
+    returnDate: '',
+    adults: 1,
+    kids: 0,
+    elderly: 0,
+    budget: 5000,
     transport: 'mix' as 'public' | 'rental' | 'mix',
   });
 
@@ -48,9 +48,34 @@ export default function Home() {
   }
 
   async function handleGenerate() {
-     // Validate dates
-    const today = new Date().toISOString().split('T')[0];
-     if (form.startDate < today) {
+    // Validate cities — must be selected from the airport dropdown
+    const leavingValid = /\([A-Z]{3}\)$/.test(form.leavingFrom.trim());
+    const destinationValid = /\([A-Z]{3}\)$/.test(form.destination.trim());
+
+    if (!leavingValid) {
+      setError('Please pick a departure airport from the dropdown.');
+      return;
+    }
+    if (!destinationValid) {
+      setError('Please pick a destination airport from the dropdown.');
+      return;
+    }
+    if (form.leavingFrom === form.destination) {
+      setError('Departure and destination cannot be the same airport.');
+      return;
+    }
+
+    // Validate dates
+    if (!form.startDate) {
+      setError('Please pick a departure date.');
+      return;
+    }
+    if (!form.returnDate) {
+      setError('Please pick a return date.');
+      return;
+    }
+    const todayStr = new Date().toISOString().slice(0, 10);
+    if (form.startDate < todayStr) {
       setError('Departure date cannot be in the past.');
       return;
     }
@@ -199,11 +224,10 @@ export default function Home() {
                     <div className="space-y-5">
                       <div className="border-b border-gray-200 pb-4">
                         <label className="block text-xs text-gray-500 mb-1">Leaving from</label>
-                        <input
-                          type="text"
+                        <AirportInput
                           value={form.leavingFrom}
-                          onChange={(e) => update('leavingFrom', e.target.value)}
-                          className="w-full text-lg font-semibold outline-none"
+                          onChange={(v) => update('leavingFrom', v)}
+                          placeholder="e.g. Jakarta"
                         />
                       </div>
 
@@ -231,11 +255,13 @@ export default function Home() {
                     <div className="space-y-5">
                       <div className="border-b border-gray-200 pb-4">
                         <label className="block text-xs text-gray-500 mb-1">Going to</label>
-                        <input
-                          type="text"
+                        <AirportInput
                           value={form.destination}
-                          onChange={(e) => update('destination', e.target.value)}
-                          className="w-full text-lg font-semibold outline-none"
+                          onChange={(v) => update('destination', v)}
+                          placeholder="e.g. Tokyo"
+                          disabledCode={
+                            form.leavingFrom.match(/\(([A-Z]{3})\)/)?.[1] || undefined
+                          }
                         />
                       </div>
 
@@ -245,6 +271,7 @@ export default function Home() {
                           type="date"
                           value={form.returnDate}
                           min={(() => {
+                            if (!form.startDate) return new Date().toISOString().split('T')[0];
                             const d = new Date(form.startDate);
                             d.setDate(d.getDate() + 1);
                             return d.toISOString().split('T')[0];

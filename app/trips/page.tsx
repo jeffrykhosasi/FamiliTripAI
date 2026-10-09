@@ -35,6 +35,20 @@ export default function TripsPage() {
     window.location.href = '/login';
   }
 
+    async function handleDelete(tripId: string) {
+        if (!confirm('Delete this draft? This cannot be undone.')) return;
+
+        const res = await fetch(`/api/trips/${tripId}`, { method: 'DELETE' });
+        const data = await res.json();
+
+        if (data.error) {
+        alert('Could not delete: ' + data.error);
+        return;
+        }
+
+        setTrips((prev) => prev.filter((t) => t.id !== tripId));
+    }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -183,13 +197,22 @@ export default function TripsPage() {
                       </a>
                     </div>
                   ) : (
-                    <a
-                      href={`/plan/${trip.id}`}
-                      className="block text-center border-2 py-2.5 rounded-lg font-semibold text-sm"
-                      style={{ borderColor: '#0d4d3d', color: '#0d4d3d' }}
-                    >
-                      Continue planning →
-                    </a>
+                    <div className="flex gap-2">
+                      <a
+                        href={`/plan/${trip.id}`}
+                        className="flex-1 text-center border-2 py-2.5 rounded-lg font-semibold text-sm"
+                        style={{ borderColor: '#0d4d3d', color: '#0d4d3d' }}
+                      >
+                        Continue planning →
+                      </a>
+                      <button
+                        onClick={() => handleDelete(trip.id)}
+                        className="px-4 py-2.5 rounded-lg border border-red-300 text-red-600 text-sm hover:bg-red-50"
+                        title="Delete draft"
+                      >
+                        🗑
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
