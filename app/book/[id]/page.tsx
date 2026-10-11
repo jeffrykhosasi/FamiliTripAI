@@ -79,10 +79,10 @@ export default function BookPage() {
             FamilyTrip
           </a>
           <a
-            href={`/plan/${id}`}
+            href="/trips"
             className="px-3 py-1.5 rounded-lg border border-gray-300 hover:bg-gray-50 text-sm"
           >
-            ← Back to trip
+            🗂 My trips
           </a>
         </div>
       </nav>

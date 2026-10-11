@@ -40,8 +40,14 @@ export default function TripPage() {
     fetch(`/api/plan/${id}`)
       .then((r) => r.json())
       .then((data) => {
-        if (data.error) setError(data.error);
-        else {
+        if (data.error) {
+          setError(data.error);
+        } else {
+          // If trip is already booked, redirect to confirmation page
+          if (data.status === 'booked') {
+            window.location.href = `/book/${id}`;
+            return;
+          }
           setTrip(data);
           setPlan(data.plan);
         }
