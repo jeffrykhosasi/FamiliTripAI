@@ -213,6 +213,18 @@ export default function BookPage() {
                 >
                   💬 Open in Telegram
                 </a>
+                <div className="mt-4 bg-blue-50 rounded-lg p-3 text-center">
+                  <p className="text-xs font-semibold text-blue-800 mb-1">
+                    💡 What can you ask?
+                  </p>
+                  <p className="text-xs text-blue-900">
+                    "What's my plan for today?"
+                    <br />
+                    "I'm tired, any lighter options?"
+                    <br />
+                    "Best ramen nearby?"
+                  </p>
+                </div>                
               </div>
             </div>
           </div>
