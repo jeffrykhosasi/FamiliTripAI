@@ -21,11 +21,18 @@ export async function POST(req: Request) {
         .from('bookings')
         .select('*')
         .eq('trip_id', tripId);
+      
+      const sorted = (existing || []).sort((a: any, b: any) => {
+        const dayA = a.details?.day || 0;
+        const dayB = b.details?.day || 0;
+        if (dayA !== dayB) return dayA - dayB;
+        return (a.details?.time || '').localeCompare(b.details?.time || '');
+      });
 
       return NextResponse.json({
         ok: true,
-        count: existing?.length || 0,
-        bookings: existing || [],
+        count: sorted.length,
+        bookings: sorted,
         alreadyBooked: true,
       });
     }
@@ -61,15 +68,33 @@ export async function POST(req: Request) {
 
     if (insertError) throw new Error(insertError.message);
 
-    await supabase
+    // await supabase
+    //   .from('trips')
+    //   .update({ status: 'booked' })
+    //   .eq('id', tripId);
+
+      const { error: updateError } = await supabase
       .from('trips')
       .update({ status: 'booked' })
       .eq('id', tripId);
 
+      if (updateError) {
+        console.error('❌ Failed to update trip status:', updateError);
+      } else {
+        console.log(`✅ Trip ${tripId} marked as booked`);
+      }
+
+      const sorted = [...bookings].sort((a: any, b: any) => {
+      const dayA = a.details?.day || 0;
+      const dayB = b.details?.day || 0;
+      if (dayA !== dayB) return dayA - dayB;
+      return (a.details?.time || '').localeCompare(b.details?.time || '');
+    });
+
     return NextResponse.json({
       ok: true,
-      count: bookings.length,
-      bookings,
+      count: sorted.length,
+      bookings: sorted,
       alreadyBooked: false,
     });
   } catch (error: any) {

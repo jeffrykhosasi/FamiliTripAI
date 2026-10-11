@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
+import { QRCodeSVG } from 'qrcode.react';
 
 export default function BookPage() {
   const params = useParams();
@@ -123,25 +124,98 @@ export default function BookPage() {
           ))}
         </div>
 
-        {/* Telegram connect — the magic moment */}
-        <div className="bg-white rounded-2xl shadow-xl p-6 mb-6 text-center">
-          <p className="text-4xl mb-3">📱</p>
-          <h2 className="font-bold text-lg mb-1">Meet your trip assistant</h2>
-          <p className="text-sm text-gray-600 mb-4">
-            Get reminders, ask questions, and send photos — all through Telegram.
-          </p>
-          <a
-            href={`https://t.me/familytrip_ai_bot?start=${id}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-block text-white px-8 py-3 rounded-lg font-semibold"
-            style={{ backgroundColor: '#0088cc' }}
-          >
-            💬 Open in Telegram
-          </a>
-          <p className="text-xs text-gray-400 mt-3">
-            Tap START in Telegram to connect your trip.
-          </p>
+        {/* Telegram connect — with QR for phone transfer */}
+        <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
+          <div className="text-center mb-6">
+            <p className="text-4xl mb-3">📱</p>
+            <h2 className="font-bold text-lg mb-1">Meet your trip assistant</h2>
+            <p className="text-sm text-gray-600">
+              Get reminders, ask questions, and send photos — all through Telegram.
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-6 items-center">
+            {/* Left: QR code */}
+            <div className="flex flex-col items-center">
+              <div className="bg-white p-4 rounded-xl border border-gray-200">
+                <QRCodeSVG
+                  value={`https://t.me/familytrip_ai_bot?start=${id}`}
+                  size={180}
+                  level="M"
+                  bgColor="#ffffff"
+                  fgColor="#0d4d3d"
+                />
+              </div>
+              <p className="text-xs text-gray-500 mt-3 text-center">
+                📷 Scan with your phone camera
+              </p>
+            </div>
+
+            {/* Right: instructions */}
+            <div>
+              <div className="space-y-4">
+                <div className="flex gap-3">
+                  <div
+                    className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold"
+                    style={{ backgroundColor: '#0d4d3d' }}
+                  >
+                    1
+                  </div>
+                  <div>
+                    <p className="font-semibold text-sm">Scan the QR code</p>
+                    <p className="text-xs text-gray-500">
+                      Opens Telegram on your phone
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex gap-3">
+                  <div
+                    className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold"
+                    style={{ backgroundColor: '#0d4d3d' }}
+                  >
+                    2
+                  </div>
+                  <div>
+                    <p className="font-semibold text-sm">Tap START</p>
+                    <p className="text-xs text-gray-500">
+                      Links your trip automatically
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex gap-3">
+                  <div
+                    className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold"
+                    style={{ backgroundColor: '#0d4d3d' }}
+                  >
+                    3
+                  </div>
+                  <div>
+                    <p className="font-semibold text-sm">Chat anytime</p>
+                    <p className="text-xs text-gray-500">
+                      Ask questions, send photos
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-6 pt-4 border-t border-gray-200">
+                <p className="text-xs text-gray-500 mb-2 text-center">
+                  Already on this device?
+                </p>
+                <a
+                  href={`https://t.me/familytrip_ai_bot?start=${id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block text-center text-white px-6 py-2.5 rounded-lg font-semibold text-sm"
+                  style={{ backgroundColor: '#0088cc' }}
+                >
+                  💬 Open in Telegram
+                </a>
+              </div>
+            </div>
+          </div>
         </div>
 
           <div className="bg-white rounded-2xl shadow-xl p-6">
