@@ -6,9 +6,9 @@ import { getCurrentUser } from '@/lib/get-user';
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
 const MODELS = [
-  'gemini-3.5-flash',
   'gemini-3.5-flash-lite',
-  'gemini-2.5-flash-lite',
+  'gemini-3.5-flash',
+  'gemini-3.8-flash',
 ];
 
 function buildPrompt(payload: any): string {

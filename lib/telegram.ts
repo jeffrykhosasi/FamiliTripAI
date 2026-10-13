@@ -6,9 +6,9 @@ import { supabase } from '@/lib/db';
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
 const GEMINI_MODELS = [
-  'gemini-3.5-flash',
   'gemini-3.5-flash-lite',
-  'gemini-2.5-flash-lite',
+  'gemini-3.5-flash',
+  'gemini-3.8-flash',
 ];
 
 const globalForBot = globalThis as unknown as {
@@ -33,13 +33,14 @@ function getHistory(chatId: number) {
   return conversationHistory[chatId] || [];
 }
 
-// Build a rich system prompt from the trip data
+// ─── Build a rich system prompt from the trip data ───
 function buildSystemPrompt(trip: any): string {
   const plan = trip.plan || {};
   const days = plan.dailyPlans || plan.days || [];
   const travelers = plan.travelers || [];
   const budget = plan.budgetBreakdown || {};
   const today = new Date().toISOString().slice(0, 10);
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
   const itineraryText = days
     .map((d: any) => {
@@ -57,101 +58,285 @@ function buildSystemPrompt(trip: any): string {
     .map((t: any) => `${t.name} (${t.role})`)
     .join(', ') || 'Family';
 
-  const parentsDayOff = plan.parentsDayOff
-    ? `\nPARENTS' DAY OFF (Day ${plan.parentsDayOff.day}):
-  Parents: ${plan.parentsDayOff.parentsActivity?.title || ''} — ${plan.parentsDayOff.parentsActivity?.description || ''}
-  Kids: ${plan.parentsDayOff.kidsActivity?.title || ''} — ${plan.parentsDayOff.kidsActivity?.description || ''}
-  Kids app: ${plan.parentsDayOff.kidsActivity?.appSuggestion || ''}
-  Toy claim code: ${plan.parentsDayOff.kidsActivity?.toyClaimCode || ''}`
+  const rentalCar = plan.rentalCar?.recommended
+    ? `\nRENTAL CAR: ${plan.rentalCar.type} · $${plan.rentalCar.dailyPrice}/day`
     : '';
 
-  const rentalCar = plan.rentalCar?.recommended
-    ? `\nRENTAL CAR: ${plan.rentalCar.type || 'rental car'} at $${plan.rentalCar.dailyPrice || 0}/day. Pickup: ${plan.rentalCar.pickupLocation || 'N/A'}. Dropoff: ${plan.rentalCar.dropoffLocation || 'N/A'}.`
-    : '\nTRANSPORT: Public transit only (no rental car).';
+  return `You are the family's travel concierge. You know their trip AND you're a knowledgeable local expert on their destination.
 
-  return `You are the family's personal trip concierge for their upcoming trip. You know everything about their itinerary, budget, and travelers.
+Today: ${today}
+DESTINATION: ${plan.destination || trip.destination}
+DATES: ${plan.startDate} → ${plan.returnDate} (${plan.days} days)
+TRAVELERS: ${travelerNames}
+BUDGET: $${trip.budget_usd || plan.budgetBreakdown?.total || 0}${rentalCar}
 
-Today's date is ${today}.
-
-TRIP SUMMARY:
-- Destination: ${plan.destination || trip.destination || 'Unknown'}
-- Dates: ${plan.startDate || trip.start_date || ''} to ${plan.returnDate || ''}
-- Duration: ${plan.days || trip.days || '?'} days
-- Travelers: ${travelerNames}
-- Budget: $${trip.budget_usd || plan.budgetBreakdown?.total || 0} USD${rentalCar}${parentsDayOff}
-
-FULL ITINERARY:
+THEIR FULL ITINERARY:
 ${itineraryText || '(No activities planned yet)'}
 
 BUDGET BREAKDOWN:
-  Accommodation: $${budget.accommodation || 0}
-  Food: $${budget.food || 0}
-  Transport: $${budget.transport || 0}
-  Activities: $${budget.activities || 0}
-  Rental car: $${budget.rentalCar || 0}
-  Total: $${budget.total || 0}
+${Object.entries(budget)
+  .map(([k, v]) => `  ${k}: $${v}`)
+  .join('\n')}
 
-YOUR ROLE:
-- Be warm, brief, and helpful — like a knowledgeable local friend.
-- Answer questions using the REAL trip data above.
-- When they ask "what's today?", look at today's date (${today}) and find the matching day.
-- If they're tired or stressed, suggest lighter alternatives from the plan.
-- If they ask about food, weather, or local tips, be helpful even if it's not in the plan.
-- Match their energy: short question → short answer. Long question → thoughtful answer.
-- Keep most replies under 100 words unless they ask for detail.
-- Use emojis sparingly — 1 per message max.
-- Never invent activities that aren't in their plan without making it clear it's a suggestion.
-- If they ask about photos or the recap, tell them to send photos anytime and view the recap at ${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/recap/${trip.id}`;
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CRITICAL INSTRUCTIONS — READ CAREFULLY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+The itinerary above is a SCHEDULE. It tells you what they have BOOKED. It is NOT the sum total of everything they might want to know.
+
+**THE MOST COMMON MISTAKE TO AVOID:**
+
+When a user asks about something and their itinerary happens to have an activity with a matching keyword, do NOT just describe their booking. Understand what they're actually asking.
+
+**Examples of questions and CORRECT answers:**
+
+1. User: "What's the most popular attraction in Disneyland?"
+   ❌ WRONG: "Your Disneyland VIP Experience is the highlight of your trip!"
+   ✅ RIGHT: "The must-do attractions at Hong Kong Disneyland are Mystic Manor (unique to HK!), Hyperspace Mountain, and the Iron Man Experience. Your VIP pass includes queue-skipping for all of them. 🎢"
+
+2. User: "What should I eat in Hong Kong?"
+   ❌ WRONG: "You have dinner at Crystal Lotus in your itinerary."
+   ✅ RIGHT: "Hong Kong classics: dim sum at Tim Ho Wan, egg waffles in Mong Kok, roast goose at Yat Lok. You're already booked at Crystal Lotus on Day 2 — try their character dim sum! 🍜"
+
+3. User: "Is it safe in Hong Kong?"
+   ❌ WRONG: "Your itinerary includes a hotel in Kowloon."
+   ✅ RIGHT: "Hong Kong is very safe — one of the lowest crime rates in Asia. Just watch for pickpockets in crowded areas like Mong Kok, and use Octopus cards instead of cash. You'll be fine. 😊"
+
+4. User: "What's the weather like?"
+   ❌ WRONG: "I don't have weather data in your itinerary."
+   ✅ RIGHT: "Late October in Hong Kong is gorgeous — 22-28°C, low humidity, mostly sunny. Perfect for walking around. Pack light layers. ☀️"
+
+**The rule:** Ask yourself, "What does the USER want to know?" Not "What's in the itinerary that matches a keyword?"
+
+**When to use the itinerary:**
+- "What's today?" → use itinerary
+- "What's my schedule?" → use itinerary
+- "How much does this cost?" (about a specific booked activity) → use itinerary
+- "Who's traveling?" → use travelers list
+
+**When to use your own knowledge:**
+- "What should I see/do/eat in [destination]?" → local knowledge
+- "What's popular/famous/must-see?" → local knowledge
+- "Is it safe?" / "Is it worth it?" / "Should I?" → local knowledge
+- "What's the weather?" → general knowledge + best guess
+
+**Combining both is best:**
+If the answer connects to their itinerary, mention it: "You're already going to X — great choice! Also try Y nearby."
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+HANDLING REQUESTS BEYOND YOUR CAPABILITY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+You are the first layer of a full-service concierge team. When a user asks for something you can't complete instantly (cancellations, refunds, re-bookings, special requests, complaints), don't say "I can't."
+
+Instead:
+1. Acknowledge warmly and reassure them.
+2. Tell them you've flagged it to the admin team.
+3. Give a realistic time estimate (within 2 hours during daytime).
+4. Ask one clarifying question if needed so the admin has context.
+
+CRITICAL: When you handle such a request, you MUST end your reply with the exact tag [CREATE_TICKET] on its own line. This tells the system to notify the admin team.
+
+EXAMPLES:
+
+User: "Can I cancel my Disney ticket and get a refund?"
+✅ RIGHT: "Of course — I've flagged this to our admin team and they'll reach out to you within 2 hours with refund options for your Disney VIP booking. Is there a specific reason for the cancellation I should pass along?\n\n[CREATE_TICKET]"
+
+User: "Can you book me an extra night at the hotel?"
+✅ RIGHT: "Absolutely — I've passed this to our admin team and they'll contact you within 2 hours to check availability at your hotel. Do you prefer the same room type?\n\n[CREATE_TICKET]"
+
+User: "Change my flight to Friday"
+✅ RIGHT: "Got it — I've notified our admin team and they'll reach out within 2 hours about flight changes. Is Friday morning or evening better?\n\n[CREATE_TICKET]"
+
+User: "The hotel was terrible, I want to complain"
+✅ RIGHT: "I'm so sorry to hear that — I've escalated this to our admin team and they'll personally reach out within 2 hours. Can you share the main issue so they can come prepared?\n\n[CREATE_TICKET]"
+
+RULES:
+- Never say "I can't help with that" or "I'm unable to..."
+- Never suggest they "contact the vendor directly" — that's OUR job as their concierge.
+- Always reassure with a specific timeframe (2 hours).
+- Always end with [CREATE_TICKET] for these requests.
+- Ask ONE clarifying question to give the admin context.
+- Do NOT end with [CREATE_TICKET] for normal questions like "what's today" or "what should I eat".
+
+TONE: reassuring, warm, competent. Like a hotel concierge who handles things behind the scenes.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+TONE:
+- Warm and helpful like a savvy local friend.
+- Match their energy (short → short, long → thoughtful).
+- Under 100 words usually. Use 1-2 emojis max.
+- Don't be robotic. Use contractions and casual phrasing.
+
+LINKS:
+- Full itinerary: ${appUrl}/itinerary/${trip.id}
+- Recap: ${appUrl}/recap/${trip.id}`;
 }
 
-// Ask Gemini with retry + fallback
+// ─── Gemini with 15-second hard timeout ───
 async function askGemini(
   systemPrompt: string,
   history: Array<{ role: 'user' | 'model'; text: string }>,
   userMessage: string
 ): Promise<string> {
+  const startTime = Date.now();
+  const MAX_WAIT_MS = 15000;
   let lastError: any = null;
 
   for (const model of GEMINI_MODELS) {
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      try {
-        const contents: any[] = [];
-        contents.push({ role: 'user', parts: [{ text: systemPrompt }] });
-        contents.push({
-          role: 'model',
-          parts: [{ text: 'Understood. I am ready to assist this family with their trip.' }],
-        });
+    const elapsed = Date.now() - startTime;
+    if (elapsed > MAX_WAIT_MS) {
+      console.log(`⏰ Gemini budget exceeded (${elapsed}ms), giving up`);
+      break;
+    }
 
-        for (const h of history) {
-          contents.push({ role: h.role, parts: [{ text: h.text }] });
-        }
-        contents.push({ role: 'user', parts: [{ text: userMessage }] });
+    const remainingMs = MAX_WAIT_MS - elapsed;
 
-        const response = await ai.models.generateContent({
-          model,
-          contents,
-        });
+    try {
+      const contents: any[] = [];
+      contents.push({ role: 'user', parts: [{ text: systemPrompt }] });
+      contents.push({
+        role: 'model',
+        parts: [{ text: 'Understood. I am ready to assist this family with their trip.' }],
+      });
 
-        const text = response.text ?? '';
-        if (!text) throw new Error('Empty response');
-        return text.trim();
-      } catch (err: any) {
-        lastError = err;
-        const msg = err.message || '';
-        const isBusy =
-          msg.includes('503') || msg.includes('UNAVAILABLE') || msg.includes('429');
-        if (!isBusy) throw err;
+      for (const h of history) {
+        contents.push({ role: h.role, parts: [{ text: h.text }] });
+      }
+      contents.push({ role: 'user', parts: [{ text: userMessage }] });
+
+      console.log(`🔄 Gemini ${model}... (timeout: ${remainingMs}ms)`);
+
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('GEMINI_TIMEOUT')), remainingMs)
+      );
+
+      const geminiPromise = ai.models.generateContent({
+        model,
+        contents,
+      });
+
+      const response: any = await Promise.race([geminiPromise, timeoutPromise]);
+
+      const text = response.text ?? '';
+      if (!text) throw new Error('Empty response');
+      console.log(`✅ Gemini ${model} succeeded in ${Date.now() - startTime}ms`);
+      return text.trim();
+    } catch (err: any) {
+      lastError = err;
+      const msg = String(err?.message || '');
+      const status = err?.status || err?.error?.code || 0;
+
+      if (msg === 'GEMINI_TIMEOUT') {
+        console.log(`⏰ Gemini ${model} timed out at ${Date.now() - startTime}ms`);
+        break;
+      }
+
+      const isBusy =
+        msg.includes('503') ||
+        msg.includes('UNAVAILABLE') ||
+        msg.includes('429') ||
+        msg.includes('high demand') ||
+        status === 503 ||
+        status === 429;
+
+      console.log(
+        `❌ Gemini ${model} failed: status=${status} busy=${isBusy} (${Date.now() - startTime}ms)`
+      );
+
+      if (!isBusy) throw err;
+
+      const afterAttempt = Date.now() - startTime;
+      if (afterAttempt + 3000 < MAX_WAIT_MS) {
         await new Promise((r) => setTimeout(r, 1000));
       }
     }
   }
+
   throw lastError;
+}
+
+// ─── OpenRouter fallback ───
+async function askOpenRouter(
+  systemPrompt: string,
+  history: Array<{ role: 'user' | 'model'; text: string }>,
+  userMessage: string
+): Promise<string> {
+  const OpenAI = (await import('openai')).default;
+  const openrouter = new OpenAI({
+    apiKey: process.env.OPENROUTER_API_KEY!,
+    baseURL: 'https://openrouter.ai/api/v1',
+  });
+
+  const messages: any[] = [
+    { role: 'system', content: systemPrompt },
+    ...history.map((h) => ({
+      role: h.role === 'model' ? 'assistant' : 'user',
+      content: h.text,
+    })),
+    { role: 'user', content: userMessage },
+  ];
+
+  const FREE_MODELS = [
+    'google/gemma-4-31b-it:free',
+    'openai/gpt-oss-20b:free',
+    'nvidia/nemotron-3-super-120b-a12b:free',
+    'nvidia/nemotron-3.5-lightning:free',
+  ];
+
+  let lastError: any = null;
+
+  for (const model of FREE_MODELS) {
+    try {
+      console.log(`🔄 OpenRouter trying ${model}...`);
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+      const response = await openrouter.chat.completions.create(
+        {
+          model,
+          messages,
+          max_tokens: 800,
+        },
+        { signal: controller.signal }
+      );
+      clearTimeout(timeoutId);
+
+      const text = response.choices[0]?.message?.content || '';
+      const finishReason = response.choices[0]?.finish_reason;
+
+      if (!text) throw new Error('Empty response');
+      if (finishReason === 'length') {
+        console.log(`⚠️ Response truncated by max_tokens (${text.length} chars)`);
+      }
+
+      console.log(`✅ OpenRouter succeeded with ${model}`);
+      return text;
+    } catch (err: any) {
+      lastError = err;
+      console.log(`❌ OpenRouter ${model} failed: ${err.message}`);
+    }
+  }
+
+  throw lastError;
+}
+
+// ─── Simple honest fallback ───
+function localFallback(trip: any, text: string): string {
+  return (
+    `Sorry — I'm having a brief connection issue and couldn't process that just now. 🙏\n\n` +
+    `Could you try again in a moment?\n\n` +
+    `If it keeps happening, you can reach the full itinerary anytime here:\n` +
+    `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/itinerary/${trip.id}`
+  );
 }
 
 export function getBot() {
   if (bot) return bot;
 
-  console.log('🤖 Starting Telegram bot with Gemini...');
+  console.log('🤖 Starting Telegram bot with Gemini + OpenRouter...');
   bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN!, { polling: true });
   globalForBot.telegramBot = bot;
 
@@ -295,7 +480,7 @@ export function getBot() {
       return;
     }
 
-    // ─── Everything else → Gemini ───
+    // ─── Everything else → AI ───
     if (!text) {
       await reply(`Send me text or a photo 📸`);
       return;
@@ -332,16 +517,109 @@ export function getBot() {
     try {
       const systemPrompt = buildSystemPrompt(trip);
       const history = getHistory(chatId).slice(-8);
+      let response = '';
+      let winner: 'gemini' | 'openrouter' | 'local' | null = null;
 
-      const response = await askGemini(systemPrompt, history, text);
+      // ─── Cancellable AI calls ───
+      let cancelled = false;
 
-      remember(chatId, 'user', text);
-      remember(chatId, 'model', response);
+      const geminiCall = (async () => {
+        const t0 = Date.now();
+        try {
+          const result = await askGemini(systemPrompt, history, text);
+          if (cancelled) {
+            console.log(`🚫 Gemini finished but was cancelled (${Date.now() - t0}ms)`);
+            return null;
+          }
+          console.log(`✅ Gemini won race in ${Date.now() - t0}ms`);
+          return result;
+        } catch (e: any) {
+          console.log(`❌ Gemini failed: ${e.message}`);
+          throw e;
+        }
+      })();
 
-      await reply(response);
+      const openRouterCall = (async () => {
+        const t0 = Date.now();
+        try {
+          const result = await askOpenRouter(systemPrompt, history, text);
+          if (cancelled) {
+            console.log(`🚫 OpenRouter finished but was cancelled (${Date.now() - t0}ms)`);
+            return null;
+          }
+          console.log(`✅ OpenRouter won race in ${Date.now() - t0}ms`);
+          return result;
+        } catch (e: any) {
+          console.log(`❌ OpenRouter failed: ${e.message}`);
+          throw e;
+        }
+      })();
+
+      // ─── Phase 1: 5s head start for Gemini ───
+      try {
+        response = await Promise.race([
+          geminiCall,
+          new Promise<string>((_, rej) =>
+            setTimeout(() => rej(new Error('HEADSTART_EXPIRED')), 5000)
+          ),
+        ]);
+        winner = 'gemini';
+      } catch (headErr: any) {
+        if (headErr.message === 'HEADSTART_EXPIRED') {
+          // ─── Phase 2: Race both ───
+          console.log('⏱️ Gemini slow — racing against OpenRouter...');
+          try {
+            response = await Promise.race([geminiCall, openRouterCall]);
+            winner = 'openrouter';
+          } catch {
+            console.log('❌ Both failed — using local fallback');
+            response = localFallback(trip, text);
+            winner = 'local';
+          }
+        } else {
+          console.log('❌ Gemini errored fast — trying OpenRouter...');
+          try {
+            response = await openRouterCall;
+            winner = 'openrouter';
+          } catch {
+            console.log('❌ OpenRouter failed — using local fallback');
+            response = localFallback(trip, text);
+            winner = 'local';
+          }
+        }
+      }
+
+      cancelled = true;
+      console.log(`🏆 Winner: ${winner}`);
+
+      // ─── Check if the bot wants to create a support ticket ───
+      if (response.includes('[CREATE_TICKET]')) {
+        const cleanResponse = response.replace(/\[CREATE_TICKET\]/g, '').trim();
+
+        try {
+          await supabase.from('support_tickets').insert({
+            trip_id: trip.id,
+            telegram_chat_id: chatId,
+            telegram_username: msg.from?.username || null,
+            message: text,
+            status: 'open',
+          });
+          console.log(`🎫 Support ticket created for chat ${chatId}`);
+        } catch (e: any) {
+          console.error('Failed to create ticket:', e.message);
+        }
+
+        remember(chatId, 'user', text);
+        remember(chatId, 'model', cleanResponse);
+        await reply(cleanResponse);
+      } else {
+        remember(chatId, 'user', text);
+        remember(chatId, 'model', response);
+        await reply(response);
+      }
     } catch (e: any) {
-      console.error('Gemini chat error:', e);
-      await reply(`I'm having trouble thinking right now. Try again in a moment. 🛠️`);
+      console.error('Chat error:', e);
+      await reply(localFallback(trip, text));
     }
   });
 
