@@ -523,13 +523,13 @@ export function getBot() {
       // ─── Cancellable AI calls ───
       let cancelled = false;
 
-      const geminiCall = (async () => {
+      const geminiCall = (async (): Promise<string> => {
         const t0 = Date.now();
         try {
           const result = await askGemini(systemPrompt, history, text);
           if (cancelled) {
             console.log(`🚫 Gemini finished but was cancelled (${Date.now() - t0}ms)`);
-            return null;
+            throw new Error('CANCELLED');
           }
           console.log(`✅ Gemini won race in ${Date.now() - t0}ms`);
           return result;
@@ -539,13 +539,13 @@ export function getBot() {
         }
       })();
 
-      const openRouterCall = (async () => {
+      const openRouterCall = (async (): Promise<string> => {
         const t0 = Date.now();
         try {
           const result = await askOpenRouter(systemPrompt, history, text);
           if (cancelled) {
             console.log(`🚫 OpenRouter finished but was cancelled (${Date.now() - t0}ms)`);
-            return null;
+            throw new Error('CANCELLED');
           }
           console.log(`✅ OpenRouter won race in ${Date.now() - t0}ms`);
           return result;

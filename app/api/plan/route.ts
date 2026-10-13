@@ -172,6 +172,15 @@ export async function POST(req: Request) {
     const prompt = buildPrompt(payload);
     const plan = await tryGenerate(prompt);
 
+    // ─── Sanitize day numbers — AI sometimes outputs huge numbers like 369 ───
+    if (plan.dailyPlans && plan.dailyPlans.length > 0) {
+      plan.dailyPlans = plan.dailyPlans.map((day: any, idx: number) => ({
+        ...day,
+        day: idx + 1,
+      }));
+      plan.days = plan.dailyPlans.length;
+    }
+
     // Force recommended to match trip-wide mode
     const tripMode = payload.mode === 'form' ? payload.form?.transport : 'mix';
     const usesCar = tripMode === 'rental' || tripMode === 'mix';
