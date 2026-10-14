@@ -142,7 +142,19 @@ export default function BookPage() {
           <p className="text-gray-600 mb-1">
             {bookings.length} activities confirmed for your trip.
           </p>
-          <p className="text-sm text-gray-400">
+          <div className="inline-flex items-center gap-2 mt-3 px-4 py-2 rounded-full" style={{ backgroundColor: '#fef3c7' }}>
+            <span className="text-sm font-semibold text-amber-800">
+              ✨ You've earned{' '}
+              {Math.floor(
+                bookings.reduce(
+                  (sum, b) => sum + (b.details?.cost_usd || 0),
+                  0
+                ) / 15
+              ).toLocaleString('en-US')}{' '}
+              miles
+            </span>
+          </div>
+          <p className="text-sm text-gray-400 mt-3">
             Your trip assistant is ready to keep you on track.
           </p>
         </div>
@@ -251,17 +263,22 @@ export default function BookPage() {
           {bookings.map((b, i) => (
             <div
               key={i}
-              className="flex justify-between items-center py-2 border-b last:border-0"
+              className="flex justify-between items-center py-3 border-b last:border-0"
             >
-              <div>
+              <div className="flex-1 min-w-0 pr-3">
                 <p className="font-medium text-sm">
                   Day {b.details?.day} · {b.details?.time} — {b.details?.title}
                 </p>
                 {b.details?.cost_usd ? (
-                  <p className="text-xs text-gray-500">${b.details.cost_usd}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    ${b.details.cost_usd}
+                    <span className="text-amber-700 font-medium ml-2">
+                      ✨ {Math.floor(b.details.cost_usd / 15)} miles
+                    </span>
+                  </p>
                 ) : null}
               </div>
-              <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded font-mono">
+              <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded font-mono whitespace-nowrap">
                 {b.confirmation_id}
               </span>
             </div>

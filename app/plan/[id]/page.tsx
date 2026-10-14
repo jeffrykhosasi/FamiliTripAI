@@ -23,6 +23,7 @@ export default function TripPage() {
   const [showUndo, setShowUndo] = useState(false);
   const [addingActivityToDay, setAddingActivityToDay] = useState<number | null>(null);
   const [showLibrary, setShowLibrary] = useState(true);
+  const [selectedCabin, setSelectedCabin] = useState<'economy' | 'premium' | 'business'>('economy');
   const [newActivity, setNewActivity] = useState({
     time: '10:00',
     title: '',
@@ -336,8 +337,24 @@ export default function TripPage() {
   const budget = trip?.budget_usd || 0;
   const car = plan.rentalCar;
 
-  // Calculate total spent on activities across all days
-  const totalSpent = (plan.dailyPlans || []).reduce(
+  // Flight cost calculation
+  const flight = plan.flight || {};
+  const cabinMultiplier =
+    flight.cabinOptions?.[selectedCabin]?.multiplier ||
+    (selectedCabin === 'economy' ? 1 : selectedCabin === 'premium' ? 1.8 : 3.5);
+  const adultCount = plan.travelers?.filter((t: any) => t.role === 'adult').length || 1;
+  const kidCount = plan.travelers?.filter((t: any) => t.role === 'kid').length || 0;
+  const seniorCount = plan.travelers?.filter((t: any) => t.role === 'elderly').length || 0;
+  const basePricePerAdult = flight.basePricePerAdult || 1200;
+  const basePricePerChild = flight.basePricePerChild || 900;
+
+  const flightTotal = Math.round(
+    ((adultCount + seniorCount) * basePricePerAdult + kidCount * basePricePerChild) *
+      cabinMultiplier
+  );
+  const milesEarned = Math.floor(flightTotal / 15);
+
+  const activitiesSpent = (plan.dailyPlans || []).reduce(
     (sum: number, day: any) =>
       sum +
       (day.activities || []).reduce(
@@ -346,9 +363,19 @@ export default function TripPage() {
       ),
     0
   );
+
+  const rentalCarTotal = plan.rentalCar?.recommended ? plan.rentalCar.totalPrice || 0 : 0;
+  const accommodation = plan.budgetBreakdown?.accommodation || 0;
+
+  // Flight cost only counts if user opted in (default: yes for OTA)
+  const includeFlight = plan.flight?.included !== false;
+  const effectiveFlightCost = includeFlight ? flightTotal : 0;
+
+  const totalSpent = activitiesSpent + rentalCarTotal + accommodation + effectiveFlightCost;
   const remaining = budget - totalSpent;
   const spentPercent = budget > 0 ? Math.min(100, (totalSpent / budget) * 100) : 0;
   const isOverBudget = totalSpent > budget;
+  const totalMilesEarned = Math.floor(totalSpent / 15);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -407,6 +434,9 @@ export default function TripPage() {
                   </span>
                   {' '}spent of ${budget.toLocaleString('en-US')}
                 </p>
+                <p className="text-[11px] text-gray-500 mt-1">
+                  ✈️ Flights ${effectiveFlightCost.toLocaleString('en-US')} · 🏨 Hotels ${accommodation.toLocaleString('en-US')} · 🚗 Car ${rentalCarTotal.toLocaleString('en-US')} · 🎫 Activities ${activitiesSpent.toLocaleString('en-US')}
+                </p>                
               </div>
               <div className="text-right">
                 <p className="text-xs text-gray-500">
@@ -417,6 +447,9 @@ export default function TripPage() {
                   style={{ color: isOverBudget ? '#dc2626' : '#0d4d3d' }}
                 >
                   ${Math.abs(remaining).toLocaleString('en-US')}
+                </p>
+                <p className="text-xs font-medium text-amber-700 mt-0.5">
+                  ✨ {totalMilesEarned.toLocaleString('en-US')} miles
                 </p>
               </div>
             </div>
@@ -475,6 +508,99 @@ export default function TripPage() {
             </div>
           )}
         </div>
+
+        {/* Flight card */}
+        {plan.flight && (
+          <div className="bg-white rounded-2xl shadow-sm p-6 mb-6" style={{ borderLeft: '4px solid #0d4d3d' }}>
+            <div className="flex justify-between items-start mb-4">
+              <div className="flex items-center gap-3">
+                <div
+                  className="w-10 h-10 rounded-lg flex items-center justify-center text-xl"
+                  style={{ backgroundColor: '#0d4d3d' }}
+                >
+                  ✈️
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#0d4d3d' }}>
+                    {plan.flight.airline || 'Flight'}
+                  </p>
+                  <p className="font-bold text-lg">
+                    {plan.flight.flightNumber || 'CX'} · {plan.flight.route || `${plan.destination} route`}
+                  </p>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-xs text-gray-500">Round-trip · {plan.travelers?.length || 1} travelers</p>
+                <p className="text-2xl font-bold" style={{ color: '#0d4d3d' }}>
+                  ${flightTotal.toLocaleString('en-US')}
+                </p>
+                <p className="text-xs font-medium text-amber-700 mt-0.5">
+                  ✨ Earn {milesEarned.toLocaleString('en-US')} miles
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3 mb-4 text-sm">
+              <div>
+                <p className="text-xs text-gray-500 mb-0.5">Departure</p>
+                <p className="font-semibold">{plan.flight.departureTime || '08:30'}</p>
+              </div>
+              <div className="border-x border-gray-200 px-3">
+                <p className="text-xs text-gray-500 mb-0.5">Duration</p>
+                <p className="font-semibold">{plan.flight.duration || '7h 15m'}</p>
+              </div>
+              <div className="pl-3">
+                <p className="text-xs text-gray-500 mb-0.5">Arrival</p>
+                <p className="font-semibold">{plan.flight.arrivalTime || '16:45'}</p>
+              </div>
+            </div>
+
+            {/* Cabin selector */}
+            <div className="pt-4 border-t border-gray-100">
+              <div className="flex justify-between items-center mb-3">
+                <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+                  Choose your cabin
+                </p>
+                {isOverBudget && selectedCabin !== 'economy' && (
+                  <p className="text-xs text-red-600 font-medium">
+                    ⚠️ Over budget with this cabin
+                  </p>
+                )}
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { key: 'economy', label: 'Economy', mult: 1, perks: 'Standard seat · 30kg luggage' },
+                  { key: 'premium', label: 'Premium Economy', mult: 1.8, perks: 'Extra legroom · Priority boarding' },
+                  { key: 'business', label: 'Business', mult: 3.5, perks: 'Lie-flat bed · Lounge access' },
+                ].map((cabin) => {
+                  const cabinPrice = Math.round(flightTotal / cabinMultiplier * cabin.mult);
+                  const cabinMiles = Math.floor(cabinPrice / 15);
+                  const isSelected = selectedCabin === cabin.key;
+                  return (
+                    <button
+                      key={cabin.key}
+                      onClick={() => setSelectedCabin(cabin.key as any)}
+                      className={`text-left rounded-lg p-3 border-2 transition ${
+                        isSelected
+                          ? 'border-green-700 bg-green-50'
+                          : 'border-gray-200 bg-white hover:border-green-400'
+                      }`}
+                    >
+                      <p className="text-xs font-bold mb-1">{cabin.label}</p>
+                      <p className="text-sm font-semibold mb-0.5">
+                        ${cabinPrice.toLocaleString('en-US')}
+                      </p>
+                      <p className="text-[10px] text-amber-700 font-medium mb-1">
+                        ✨ {cabinMiles} miles
+                      </p>
+                      <p className="text-[10px] text-gray-500 leading-tight">{cabin.perks}</p>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Rental car card */}
         {car && car.recommended ? (
@@ -1009,6 +1135,14 @@ function ActivityModal({
                 <span className="text-gray-500">Cost</span>
                 <span className="font-medium">${a.cost_usd || 0}</span>
               </div>
+              {(a.cost_usd || 0) > 0 && (
+                <div className="flex justify-between py-1 border-b border-gray-100">
+                  <span className="text-gray-500">Miles earned</span>
+                  <span className="font-medium text-amber-700">
+                    ✨ {Math.floor((a.cost_usd || 0) / 15)} miles
+                  </span>
+                </div>
+              )}
               <div className="flex justify-between py-1 border-b border-gray-100">
                 <span className="text-gray-500">Family</span>
                 <span className="font-medium">

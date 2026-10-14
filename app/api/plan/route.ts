@@ -36,6 +36,12 @@ TRAVELERS: ${form.adults} adults, ${form.kids} children (2-12), ${form.elderly} 
 TOTAL BUDGET: $${form.budget} USD
 TRANSPORT: ${transportText}${notesText}
 
+
+IMPORTANT SEQUENCING:
+1. First, decide the flight itinerary (departure time, arrival time, duration).
+2. Then plan each day — especially Day 1 — anchored to the flight timing.
+3. Day 1's first activity MUST be scheduled AFTER the flight arrives (allow 2+ hours for immigration, baggage, transport to hotel).
+
 REQUIREMENTS:
 
 A) BUDGET BREAKDOWN — realistic allocation across accommodation, food, transport, activities, and (if applicable) rental car.
@@ -82,12 +88,33 @@ F) The LAST DAY must always include a "Travel to [departure airport]" activity a
 
 G) Respect constraints (e.g. knee problems → avoid hiking).
 
+H) FLIGHTS: Generate realistic flight info for the route. Use real airline names (prefer Cathay Pacific when plausible). Estimate:
+   - Realistic departure and arrival times based on typical schedules (usually morning departures for long-haul)
+   - Realistic flight duration based on distance
+   - basePricePerAdult: realistic economy round-trip price per adult in USD (Jakarta to Tokyo is ~$700-1200)
+   - basePricePerChild: usually 75% of adult price
+   
+
 CRITICAL: The "day" field MUST be sequential integers starting from 1 (1, 2, 3, ... ${form.days}). Never use large numbers. Number of dailyPlans MUST equal ${form.days}.
 
 Return ONLY valid JSON, no markdown:
 {
   "destination": "string",
   "startDate": "${form.startDate}",
+  "flight": {
+    "airline": "Cathay Pacific",
+    "flightNumber": "CX",
+    "route": "${form.leavingFrom} → ${form.destination}",
+    "departureTime": "08:30",
+    "arrivalTime": "16:45",
+    "duration": "7h 15m",
+    "basePricePerAdult": 1200,
+    "basePricePerChild": 900,
+    "cabinOptions": {
+      "economy": { "multiplier": 1, "label": "Economy" },
+      "premium": { "multiplier": 1.8, "label": "Premium Economy" },
+      "business": { "multiplier": 3.5, "label": "Business" }
+    }
   "returnDate": "${form.returnDate}",
   "days": ${form.days},
   "travelers": [{ "name": "string", "role": "adult|kid|elderly" }],
@@ -180,6 +207,53 @@ export async function POST(req: Request) {
       plan.days = plan.dailyPlans.length;
     }
 
+    // ─── Fix Day 1 sequencing based on flight arrival ───
+    if (plan.flight?.arrivalTime && plan.dailyPlans?.[0]?.activities) {
+      const arrivalMatch = plan.flight.arrivalTime.match(/(\d{1,2}):(\d{2})/);
+      if (arrivalMatch) {
+        const arrivalHours = parseInt(arrivalMatch[1]);
+        const arrivalMinutes = parseInt(arrivalMatch[2]);
+        const arrivalTotal = arrivalHours * 60 + arrivalMinutes;
+
+        // Earliest an activity can start: 2 hours after arrival
+        const earliestActivityTotal = arrivalTotal + 120;
+
+        // Filter and adjust Day 1 activities
+        const day1 = plan.dailyPlans[0];
+        day1.activities = (day1.activities || [])
+          .map((a: any) => {
+            const timeMatch = (a.time || '').match(/(\d{1,2}):(\d{2})/);
+            if (!timeMatch) return a;
+
+            const activityTotal = parseInt(timeMatch[1]) * 60 + parseInt(timeMatch[2]);
+
+            // If activity is BEFORE arrival + buffer, push it later
+            if (activityTotal < earliestActivityTotal) {
+              const newTotal = earliestActivityTotal;
+              const newHours = Math.floor(newTotal / 60);
+              const newMinutes = newTotal % 60;
+              return {
+                ...a,
+                time: `${String(newHours).padStart(2, '0')}:${String(newMinutes).padStart(2, '0')}`,
+              };
+            }
+            return a;
+          })
+          // Remove "arrival"-type activities that come before the flight lands
+          .filter((a: any) => {
+            const timeMatch = (a.time || '').match(/(\d{1,2}):(\d{2})/);
+            if (!timeMatch) return true;
+            const activityTotal = parseInt(timeMatch[1]) * 60 + parseInt(timeMatch[2]);
+            // Keep if it's after arrival or if it's an arrival-related activity
+            const t = (a.title || '').toLowerCase();
+            const isArrivalActivity = t.includes('arrive') || t.includes('flight') || t.includes('airport');
+            return activityTotal >= earliestActivityTotal || isArrivalActivity;
+          })
+          // Sort by time
+          .sort((a: any, b: any) => (a.time || '').localeCompare(b.time || ''));
+      }
+    }
+
     // ─── 2. Check eligibility for parents' day off ───
     const travelerRoles = (plan.travelers || []).map((t: any) => t.role);
     const kidCount = travelerRoles.filter((r: string) => r === 'kid').length;
@@ -269,12 +343,26 @@ export async function POST(req: Request) {
 
     // ─── 6. Inject rental car pickup + return + airport travel ───
     if (hasCar && plan.dailyPlans?.length > 0) {
+
+      // Calculate pickup time: ~1 hour after flight arrival
+      let pickupTime = '10:00';
+      if (plan.flight?.arrivalTime) {
+        const match = plan.flight.arrivalTime.match(/(\d{1,2}):(\d{2})/);
+        if (match) {
+          const totalMinutes =
+            parseInt(match[1]) * 60 + parseInt(match[2]) + 60; // +1 hour
+          const hours = Math.floor(totalMinutes / 60);
+          const minutes = totalMinutes % 60;
+          pickupTime = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+        }
+      }
+
       // Pickup on Day 1
       if (!plan.dailyPlans[0].activities) plan.dailyPlans[0].activities = [];
       plan.dailyPlans[0].activities.unshift({
-        time: '10:00',
+        time: pickupTime,
         title: '🚗 Pick up rental car',
-        description: `Pick up your ${plan.rentalCar.type || 'rental car'} at ${plan.rentalCar.pickupLocation || 'the airport'}. Bring your driver's license and credit card.`,
+        description: `After your flight arrives at ${plan.flight?.arrivalTime || 'the airport'}, pick up your ${plan.rentalCar.type || 'rental car'} at ${plan.rentalCar.pickupLocation || 'the airport'}. Bring your driver's license and credit card.`,
         cost_usd: 0,
         transport: {
           recommended: 'public',
