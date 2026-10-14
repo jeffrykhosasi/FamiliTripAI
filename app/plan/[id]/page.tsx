@@ -16,6 +16,19 @@ export default function TripPage() {
   const [removingCar, setRemovingCar] = useState(false);
   const [addingCar, setAddingCar] = useState(false);
 
+  // Undo + add activity state
+  const [deletedStack, setDeletedStack] = useState<
+    Array<{ di: number; ai: number; activity: any; dayNumber: number }>
+  >([]);
+  const [showUndo, setShowUndo] = useState(false);
+  const [addingActivityToDay, setAddingActivityToDay] = useState<number | null>(null);
+  const [showLibrary, setShowLibrary] = useState(true);
+  const [newActivity, setNewActivity] = useState({
+    time: '10:00',
+    title: '',
+    description: '',
+  });
+
   useEffect(() => {
     fetch(`/api/plan/${id}`)
       .then((r) => r.json())
@@ -34,6 +47,8 @@ export default function TripPage() {
       });
   }, [id]);
 
+  const hasCar = plan?.rentalCar?.recommended === true;
+
   function updateActivity(di: number, ai: number, field: string, value: any) {
     const next = structuredClone(plan);
     next.dailyPlans[di].activities[ai][field] = value;
@@ -42,11 +57,151 @@ export default function TripPage() {
   }
 
   function removeActivity(di: number, ai: number) {
+    const activity = plan.dailyPlans[di].activities[ai];
+    const dayNumber = plan.dailyPlans[di].day;
+
+    // Add to the persistent library
     const next = structuredClone(plan);
+    if (!next.removedActivities) next.removedActivities = [];
+    next.removedActivities.push({
+      activity: structuredClone(activity),
+      dayNumber,
+      removedAt: new Date().toISOString(),
+    });
+
+    // Remove from the day
     next.dailyPlans[di].activities.splice(ai, 1);
+
+    // Still track for instant undo
+    setDeletedStack((prev) => [
+      ...prev,
+      { di, ai, activity: structuredClone(activity), dayNumber },
+    ]);
+    setShowUndo(true);
+    setTimeout(() => setShowUndo(false), 5000);
+
     setPlan(next);
     setSaved(false);
     setActiveActivity(null);
+  }
+
+  function undoLastDelete() {
+    if (deletedStack.length === 0) return;
+    const last = deletedStack[deletedStack.length - 1];
+    const next = structuredClone(plan);
+    const day = next.dailyPlans.find((d: any) => d.day === last.dayNumber);
+    if (day) {
+      const idx = Math.min(last.ai, day.activities.length);
+      day.activities.splice(idx, 0, last.activity);
+      // Remove from library
+      if (next.removedActivities) {
+        const idx2 = next.removedActivities.findIndex(
+          (ra: any) =>
+            ra.activity.title === last.activity.title &&
+            ra.dayNumber === last.dayNumber
+        );
+        if (idx2 >= 0) next.removedActivities.splice(idx2, 1);
+      }
+      setPlan(next);
+      setSaved(false);
+    }
+    setDeletedStack((prev) => prev.slice(0, -1));
+    setShowUndo(false);
+  }
+
+    function restoreActivity(libraryIndex: number, targetDay: number) {
+    const next = structuredClone(plan);
+    if (!next.removedActivities || !next.removedActivities[libraryIndex]) return;
+
+    const removed = next.removedActivities[libraryIndex];
+    const day = next.dailyPlans.find((d: any) => d.day === targetDay);
+    if (!day) return;
+
+    // Auto-generate a time slot for the restored activity
+    const timeSlot = generateTimeSlot(day);
+    const restoredActivity = {
+      ...removed.activity,
+      time: removed.activity.time || timeSlot,
+    };
+
+    day.activities.push(restoredActivity);
+    day.activities.sort((a: any, b: any) =>
+      (a.time || '').localeCompare(b.time || '')
+    );
+
+    // Remove from library
+    next.removedActivities.splice(libraryIndex, 1);
+
+    setPlan(next);
+    setSaved(false);
+  }
+
+  function generateTimeSlot(day: any): string {
+    const activities = day.activities || [];
+    if (activities.length === 0) return '10:00';
+
+    // Find the latest activity time and add 2 hours
+    const lastTime = activities[activities.length - 1].time || '10:00';
+    const match = lastTime.match(/(\d{1,2}):(\d{2})/);
+    if (!match) return '10:00';
+
+    let hours = parseInt(match[1]) + 2;
+    const minutes = parseInt(match[2]);
+
+    // Cap at 20:00
+    if (hours > 20) hours = 20;
+
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+  }
+
+  function startAddActivity(dayNumber: number) {
+    setAddingActivityToDay(dayNumber);
+    setNewActivity({ time: '10:00', title: '', description: '' });
+  }
+
+  function confirmAddActivity() {
+    if (!newActivity.title.trim() || addingActivityToDay === null) return;
+    const next = structuredClone(plan);
+    const day = next.dailyPlans.find((d: any) => d.day === addingActivityToDay);
+    if (!day) return;
+    const autoTime = newActivity.time && newActivity.time !== '10:00' 
+      ? newActivity.time 
+      : generateTimeSlot(day);
+
+    day.activities.push({
+      time: autoTime,
+      title: newActivity.title.trim(),
+      description: newActivity.description.trim() || '',
+      cost_usd: 0,
+      transport: {
+        recommended: hasCar ? 'car' : 'public',
+        car: {
+          available: hasCar,
+          duration: '15 min',
+          distance: '5 km',
+          cost: 5,
+          details: 'Drive to the activity and park nearby.',
+        },
+        public: {
+          available: true,
+          duration: '25 min',
+          cost: 3,
+          details: 'Take public transport to the activity.',
+        },
+      },
+      next: '',
+      kidFriendly: true,
+      elderlyFriendly: true,
+    });
+
+    day.activities.sort((a: any, b: any) =>
+      (a.time || '').localeCompare(b.time || '')
+    );
+
+    setPlan(next);
+    setSaved(false);
+    setAddingActivityToDay(null);
+    setNewActivity({ time: '10:00', title: '', description: '' });
   }
 
   async function saveChanges() {
@@ -112,6 +267,20 @@ export default function TripPage() {
   const budget = trip?.budget_usd || 0;
   const car = plan.rentalCar;
 
+  // Calculate total spent on activities across all days
+  const totalSpent = (plan.dailyPlans || []).reduce(
+    (sum: number, day: any) =>
+      sum +
+      (day.activities || []).reduce(
+        (daySum: number, a: any) => daySum + (a.cost_usd || 0),
+        0
+      ),
+    0
+  );
+  const remaining = budget - totalSpent;
+  const spentPercent = budget > 0 ? Math.min(100, (totalSpent / budget) * 100) : 0;
+  const isOverBudget = totalSpent > budget;
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Top nav */}
@@ -156,7 +325,51 @@ export default function TripPage() {
             </div>
           </div>
 
-          {/* Budget breakdown */}
+          {/* Budget tracker */}
+          <div className="mt-6 pt-6 border-t border-gray-200">
+            <div className="flex justify-between items-center mb-3">
+              <div>
+                <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">
+                  Budget tracker
+                </p>
+                <p className="text-sm text-gray-600">
+                  <span className="font-semibold" style={{ color: isOverBudget ? '#dc2626' : '#0d4d3d' }}>
+                    ${totalSpent.toLocaleString('en-US')}
+                  </span>
+                  {' '}spent of ${budget.toLocaleString('en-US')}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs text-gray-500">
+                  {isOverBudget ? 'Over budget by' : 'Remaining'}
+                </p>
+                <p
+                  className="text-lg font-bold"
+                  style={{ color: isOverBudget ? '#dc2626' : '#0d4d3d' }}
+                >
+                  ${Math.abs(remaining).toLocaleString('en-US')}
+                </p>
+              </div>
+            </div>
+
+            {/* Progress bar */}
+            <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
+              <div
+                className="h-full transition-all duration-500"
+                style={{
+                  width: `${spentPercent}%`,
+                  backgroundColor: isOverBudget ? '#dc2626' : '#0d4d3d',
+                }}
+              />
+            </div>
+
+            {isOverBudget && (
+              <p className="text-xs text-red-600 mt-2 font-medium">
+                ⚠️ You're ${Math.abs(remaining).toLocaleString('en-US')} over budget. Remove or reduce some activities.
+              </p>
+            )}
+          </div>          
+
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
             {[
               { label: 'Accommodation', value: breakdown.accommodation, icon: '🏨' },
@@ -329,8 +542,148 @@ export default function TripPage() {
                 </button>
               );
             })}
+
+            {/* Add activity button/form */}
+            {addingActivityToDay === day.day ? (
+              <div className="mt-4 p-4 bg-blue-50 rounded-xl border-2 border-blue-300">
+                <p className="font-semibold text-sm mb-3">Add activity to Day {day.day}</p>
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    placeholder="Activity title (e.g. Visit Senso-ji Temple)"
+                    value={newActivity.title}
+                    onChange={(e) => setNewActivity({ ...newActivity, title: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500"
+                    autoFocus
+                  />
+                  <input
+                    type="time"
+                    value={newActivity.time}
+                    onChange={(e) => setNewActivity({ ...newActivity, time: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500"
+                  />
+                  <textarea
+                    placeholder="Description (optional)"
+                    value={newActivity.description}
+                    onChange={(e) => setNewActivity({ ...newActivity, description: e.target.value })}
+                    rows={2}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 resize-none"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={confirmAddActivity}
+                      disabled={!newActivity.title.trim()}
+                      className="flex-1 text-white py-2 rounded-lg font-semibold text-sm disabled:opacity-50"
+                      style={{ backgroundColor: '#0d4d3d' }}
+                    >
+                      Add activity
+                    </button>
+                    <button
+                      onClick={() => setAddingActivityToDay(null)}
+                      className="px-4 py-2 rounded-lg border border-gray-300 text-sm hover:bg-white"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => startAddActivity(day.day)}
+                className="w-full mt-3 py-3 rounded-xl border-2 border-dashed border-gray-300 text-sm font-medium text-gray-600 hover:border-green-700 hover:text-green-800 hover:bg-green-50 transition"
+              >
+                + Add activity to Day {day.day}
+              </button>
+            )}
           </div>
         ))}
+
+        {/* Activity Library */}
+        {(plan.removedActivities || []).length > 0 && (
+          <div className="bg-white rounded-2xl shadow-sm p-6 mb-4 border-l-4" style={{ borderColor: '#d4a574' }}>
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <h2 className="font-bold text-lg">📚 Activity Library</h2>
+                <p className="text-sm text-gray-500">
+                  {(plan.removedActivities || []).length} removed activities — click to restore
+                </p>
+              </div>
+              <button
+                onClick={() => setShowLibrary(!showLibrary)}
+                className="text-sm text-gray-500 hover:text-gray-800"
+              >
+                {showLibrary ? '▼ Hide' : '▲ Show'}
+              </button>
+            </div>
+
+            {showLibrary && (
+              <div className="grid md:grid-cols-2 gap-3">
+                {(plan.removedActivities || []).map((ra: any, i: number) => (
+                  <div
+                    key={i}
+                    className="border border-gray-200 rounded-lg p-3 hover:border-green-700 transition"
+                  >
+                    <div className="flex justify-between items-start gap-2 mb-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-sm truncate">{ra.activity.title}</p>
+                        <p className="text-xs text-gray-500">
+                          Originally Day {ra.dayNumber} · {ra.activity.time}
+                        </p>
+                        {ra.activity.description && (
+                          <p className="text-xs text-gray-500 mt-1 line-clamp-1">
+                            {ra.activity.description}
+                          </p>
+                        )}
+                      </div>
+                      <span className="text-xs font-medium text-gray-500 whitespace-nowrap">
+                        ${ra.activity.cost_usd || 0}
+                      </span>
+                    </div>
+                    <div className="flex gap-2">
+                      <select
+                        id={`restore-day-${i}`}
+                        className="flex-1 text-xs border border-gray-300 rounded px-2 py-1 outline-none focus:border-green-700"
+                        defaultValue={ra.dayNumber}
+                      >
+                        {(plan.dailyPlans || []).map((d: any) => (
+                          <option key={d.day} value={d.day}>
+                            Day {d.day}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => {
+                          const select = document.getElementById(
+                            `restore-day-${i}`
+                          ) as HTMLSelectElement;
+                          restoreActivity(i, parseInt(select.value));
+                        }}
+                        className="text-xs font-medium px-3 py-1 rounded text-white"
+                        style={{ backgroundColor: '#0d4d3d' }}
+                      >
+                        Restore
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Undo toast */}
+        {showUndo && deletedStack.length > 0 && (
+          <div className="fixed bottom-24 left-1/2 -translate-x-1/2 bg-gray-900 text-white px-6 py-3 rounded-full shadow-lg flex items-center gap-4 z-50">
+            <span className="text-sm">Activity removed</span>
+            <button
+              onClick={undoLastDelete}
+              className="text-sm font-semibold underline hover:no-underline"
+              style={{ color: '#7ce4b8' }}
+            >
+              Undo
+            </button>
+          </div>
+        )}
 
         {/* Sticky action bar */}
         <div className="bg-white rounded-2xl shadow-sm p-4 flex gap-3 sticky bottom-4">
@@ -358,7 +711,7 @@ export default function TripPage() {
         </div>
       </main>
 
-      {/* Modal */}
+      {/* Activity Modal */}
       {activeActivity && (
         <ActivityModal
           activity={plan.dailyPlans[activeActivity.di].activities[activeActivity.ai]}
@@ -376,7 +729,7 @@ export default function TripPage() {
 }
 
 // ═══════════════════════════════════════════════════════
-// ACTIVITY MODAL — the redesigned detail view
+// ACTIVITY MODAL
 // ═══════════════════════════════════════════════════════
 function ActivityModal({
   activity,
@@ -402,14 +755,12 @@ function ActivityModal({
   const [editedTitle, setEditedTitle] = useState(a.title || '');
   const [editedDesc, setEditedDesc] = useState(a.description || '');
 
-  // Split description into highlights (by sentence)
   const highlights = (a.description || '')
     .split(/[.!?]+/)
     .map((s: string) => s.trim())
     .filter((s: string) => s.length > 10)
     .slice(0, 4);
 
-  // Pick an emoji based on activity type
   function pickEmoji(title: string): string {
     const t = (title || '').toLowerCase();
     if (t.includes('temple') || t.includes('shrine') || t.includes('castle')) return '⛩️';
@@ -436,6 +787,16 @@ function ActivityModal({
     if (editedTitle !== a.title) onUpdate('title', editedTitle);
     if (editedDesc !== a.description) onUpdate('description', editedDesc);
     onClose();
+  }
+
+  function askConcierge() {
+    const question = `Tell me more about "${a.title}" on Day ${day}. What should I know before going?`;
+    navigator.clipboard.writeText(question).then(() => {
+      alert(
+        `Question copied to clipboard:\n\n"${question}"\n\nPaste it in your Telegram chat with the concierge.`
+      );
+      window.open('https://t.me/familytrip_ai_bot', '_blank');
+    });
   }
 
   return (
@@ -479,10 +840,12 @@ function ActivityModal({
         <div className="p-6 grid md:grid-cols-3 gap-6">
           {/* Left: image */}
           <div className="md:col-span-1">
-            <div className="aspect-square rounded-xl overflow-hidden relative"
-                 style={{
-                   background: 'linear-gradient(135deg, #0d4d3d 0%, #2a7a63 100%)',
-                 }}>
+            <div
+              className="aspect-square rounded-xl overflow-hidden relative"
+              style={{
+                background: 'linear-gradient(135deg, #0d4d3d 0%, #2a7a63 100%)',
+              }}
+            >
               <img
                 src={heroImage}
                 alt={a.title}
@@ -491,11 +854,9 @@ function ActivityModal({
                   (e.target as HTMLImageElement).style.display = 'none';
                 }}
               />
-              {/* Emoji fallback (shows through if image fails) */}
               <div className="absolute inset-0 flex items-center justify-center text-7xl opacity-90 pointer-events-none">
                 {emoji}
               </div>
-              {/* Gradient overlay for readability */}
               <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent pointer-events-none" />
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
@@ -605,7 +966,7 @@ function ActivityModal({
           </div>
         </div>
 
-        {/* Bottom: About + Highlights + Actions */}
+        {/* Bottom */}
         <div className="px-6 pb-6">
           <div className="border-t border-gray-200 pt-6">
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
@@ -644,7 +1005,7 @@ function ActivityModal({
               rel="noopener noreferrer"
               className="flex-1 min-w-[160px] px-4 py-2.5 rounded-lg border border-gray-300 hover:bg-gray-50 text-sm font-medium text-center"
             >
-              🗺 Open in Google Maps
+              🗺 Google Maps
             </a>
             <button
               onClick={onRemove}
