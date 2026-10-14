@@ -1,56 +1,193 @@
-import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/db';
+'use client';
 
-export async function GET(req: Request) {
-  const tripId = new URL(req.url).searchParams.get('tripId');
-  if (!tripId) return NextResponse.json({ error: 'tripId required' }, { status: 400 });
+import { useEffect, useState } from 'react';
+import { useParams } from 'next/navigation';
 
-  const { data, error } = await supabase
-    .from('photos')
-    .select('*')
-    .eq('trip_id', tripId)
-    .order('display_order', { ascending: true })
-    .order('uploaded_at', { ascending: true });
+export default function PhotosPage() {
+  const params = useParams();
+  const tripId = params.id as string;
+  const [photos, setPhotos] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data ?? []);
-}
-
-export async function PATCH(req: Request) {
-  const { updates } = await req.json();
-  for (const u of updates) {
-    const patch: any = {};
-    if (u.display_order !== undefined) patch.display_order = u.display_order;
-    if (u.caption !== undefined) patch.caption = u.caption;
-
-    const { error } = await supabase
-      .from('photos')
-      .update(patch)
-      .eq('id', u.id);
-
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-  return NextResponse.json({ ok: true });
-}
-
-export async function DELETE(req: Request) {
-  const id = new URL(req.url).searchParams.get('id');
-  if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });
-
-  const { data: photo } = await supabase
-    .from('photos')
-    .select('url')
-    .eq('id', id)
-    .single();
-
-  if (photo?.url) {
-    const path = photo.url.split('/trip-photos/')[1];
-    if (path) {
-      await supabase.storage.from('trip-photos').remove([path]);
-    }
+  async function load() {
+    const res = await fetch(`/api/photos?tripId=${tripId}`);
+    const data = await res.json();
+    setPhotos(Array.isArray(data) ? data : []);
+    setLoading(false);
   }
 
-  const { error } = await supabase.from('photos').delete().eq('id', id);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ ok: true });
+  useEffect(() => {
+    load();
+  }, [tripId]);
+
+  async function remove(id: string) {
+    if (!confirm('Delete this photo?')) return;
+    await fetch(`/api/photos?id=${id}`, { method: 'DELETE' });
+    setPhotos((prev) => prev.filter((p) => p.id !== id));
+  }
+
+  function move(index: number, dir: -1 | 1) {
+    const newIdx = index + dir;
+    if (newIdx < 0 || newIdx >= photos.length) return;
+    const next = [...photos];
+    [next[index], next[newIdx]] = [next[newIdx], next[index]];
+    next.forEach((p, i) => (p.display_order = i));
+    setPhotos(next);
+  }
+
+  function updateCaption(id: string, caption: string) {
+    setPhotos((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, caption } : p))
+    );
+  }
+
+  async function saveOrder() {
+    setSaving(true);
+    const updates = photos.map((p, i) => ({
+      id: p.id,
+      display_order: i,
+      caption: p.caption,
+    }));
+    await fetch('/api/photos', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ updates }),
+    });
+    setSaving(false);
+    alert('Saved!');
+  }
+
+  if (loading) return <p className="p-8">Loading photos...</p>;
+
+  return (
+    <main className="min-h-screen bg-gradient-to-br from-sky-50 to-indigo-100">
+      <nav className="bg-white border-b border-gray-200">
+        <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
+          <a href="/" className="text-xl font-bold" style={{ color: '#0d4d3d' }}>
+            FamilyTrip
+          </a>
+          <div className="flex gap-2 text-sm">
+            <a
+              href="/trips"
+              className="px-3 py-1.5 rounded-lg border border-gray-300 hover:bg-gray-50"
+            >
+              🗂 My trips
+            </a>
+            <a
+              href={`/recap/${tripId}`}
+              className="px-3 py-1.5 rounded-lg text-white font-medium"
+              style={{ backgroundColor: '#0d4d3d' }}
+            >
+              🎬 Album
+            </a>
+          </div>
+        </div>
+      </nav>
+
+      <div className="max-w-4xl mx-auto p-8">
+        <div className="bg-white rounded-2xl shadow-xl p-8 mb-6">
+          <h1 className="text-3xl font-bold mb-2">Your trip photos</h1>
+          <p className="text-gray-600">
+            Send photos to your Telegram bot anytime. They'll appear here.
+          </p>
+          <p className="text-sm text-gray-500 mt-2">
+            <strong>{photos.length}</strong> photo{photos.length === 1 ? '' : 's'} collected
+          </p>
+        </div>
+
+        {photos.length === 0 ? (
+          <div className="bg-white rounded-2xl shadow-xl p-12 text-center">
+            <p className="text-5xl mb-4">📸</p>
+            <h2 className="font-bold text-lg mb-2">No photos yet</h2>
+            <p className="text-gray-600 mb-4">
+              Send a photo to your Telegram bot during the trip. It'll show up here.
+            </p>
+            <a
+              href={`/book/${tripId}`}
+              className="inline-block text-white px-6 py-3 rounded-lg font-semibold"
+              style={{ backgroundColor: '#0088cc' }}
+            >
+              💬 Open Telegram bot
+            </a>
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+              {photos.map((p, i) => (
+                <div
+                  key={p.id}
+                  className="bg-white rounded-xl shadow-sm overflow-hidden group"
+                >
+                  <div className="relative aspect-square">
+                    <img
+                      src={p.url}
+                      alt={p.caption || ''}
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition">
+                      <button
+                        onClick={() => move(i, -1)}
+                        disabled={i === 0}
+                        className="bg-black/60 text-white w-7 h-7 rounded-full text-xs disabled:opacity-30"
+                        title="Move earlier"
+                      >
+                        ←
+                      </button>
+                      <button
+                        onClick={() => move(i, 1)}
+                        disabled={i === photos.length - 1}
+                        className="bg-black/60 text-white w-7 h-7 rounded-full text-xs disabled:opacity-30"
+                        title="Move later"
+                      >
+                        →
+                      </button>
+                      <button
+                        onClick={() => remove(p.id)}
+                        className="bg-red-500 text-white w-7 h-7 rounded-full text-xs"
+                        title="Delete"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    {i === 0 && (
+                      <span className="absolute top-2 left-2 text-[10px] bg-green-600 text-white px-2 py-0.5 rounded">
+                        COVER
+                      </span>
+                    )}
+                  </div>
+                  <div className="p-3">
+                    <input
+                      value={p.caption || ''}
+                      onChange={(e) => updateCaption(p.id, e.target.value)}
+                      placeholder="Add a caption..."
+                      className="w-full text-xs border border-gray-200 rounded px-2 py-1 outline-none focus:border-green-700"
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={saveOrder}
+                disabled={saving}
+                className="border-2 px-6 py-3 rounded-lg font-semibold disabled:opacity-50"
+                style={{ borderColor: '#0d4d3d', color: '#0d4d3d' }}
+              >
+                {saving ? 'Saving...' : '💾 Save changes'}
+              </button>
+              <a
+                href={`/recap/${tripId}`}
+                className="text-white px-6 py-3 rounded-lg font-semibold"
+                style={{ backgroundColor: '#0d4d3d' }}
+              >
+                🎬 View album
+              </a>
+            </div>
+          </>
+        )}
+      </div>
+    </main>
+  );
 }
