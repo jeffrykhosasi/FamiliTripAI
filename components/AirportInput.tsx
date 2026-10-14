@@ -8,9 +8,10 @@ type Props = {
   onChange: (v: string) => void;
   placeholder?: string;
   disabledCode?: string;
+  error?: boolean;
 };
 
-export default function AirportInput({ value, onChange, placeholder, disabledCode }: Props) {
+export default function AirportInput({ value, onChange, placeholder, disabledCode, error }: Props) {
   const [query, setQuery] = useState(value);
   const [results, setResults] = useState<Airport[]>([]);
   const [open, setOpen] = useState(false);
@@ -97,7 +98,9 @@ export default function AirportInput({ value, onChange, placeholder, disabledCod
         }}
         onKeyDown={handleKeyDown}
         placeholder={placeholder || 'Start typing a city...'}
-        className="w-full text-lg font-semibold outline-none bg-transparent"
+        className={`w-full text-lg font-semibold outline-none bg-transparent ${
+          error ? 'text-red-600' : ''
+        }`}
         autoComplete="off"
       />
 

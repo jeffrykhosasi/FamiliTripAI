@@ -4,18 +4,12 @@ import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase-browser';
 import AirportInput from '@/components/AirportInput';
 
-type Mode = 'form' | 'prompt';
-
 export default function Home() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [mode, setMode] = useState<Mode>('form');
   const supabase = createClient();
 
-  const [prompt, setPrompt] = useState('');
-
-  // Compute sensible default dates (today + 30 days, today + 35 days)
   const [form, setForm] = useState({
     leavingFrom: '',
     destination: '',
@@ -26,6 +20,7 @@ export default function Home() {
     elderly: 0,
     budget: 5000,
     transport: 'mix' as 'public' | 'rental' | 'mix',
+    notes: '',
   });
 
   useEffect(() => {
@@ -42,13 +37,25 @@ export default function Home() {
   }
 
   function calcDays() {
+    if (!form.startDate || !form.returnDate) return 1;
     const start = new Date(form.startDate);
     const end = new Date(form.returnDate);
-    return Math.max(1, Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
+    return Math.max(
+      1,
+      Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))
+    );
   }
 
+  const canSubmit =
+    /\([A-Z]{3}\)$/.test(form.leavingFrom.trim()) &&
+    /\([A-Z]{3}\)$/.test(form.destination.trim()) &&
+    form.leavingFrom !== form.destination &&
+    form.startDate &&
+    form.returnDate &&
+    form.returnDate > form.startDate;
+
   async function handleGenerate() {
-    // Validate cities — must be selected from the airport dropdown
+    // Validate cities
     const leavingValid = /\([A-Z]{3}\)$/.test(form.leavingFrom.trim());
     const destinationValid = /\([A-Z]{3}\)$/.test(form.destination.trim());
 
@@ -86,17 +93,14 @@ export default function Home() {
 
     setLoading(true);
     setError('');
-    
     try {
-      const payload =
-        mode === 'form'
-          ? { mode: 'form', form: { ...form, days: calcDays() } }
-          : { mode: 'prompt', prompt };
-
       const res = await fetch('/api/plan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          mode: 'form',
+          form: { ...form, days: calcDays() },
+        }),
       });
       const data = await res.json();
       if (data.error) {
@@ -121,11 +125,7 @@ export default function Home() {
               FamilyTrip
             </span>
             <div className="hidden md:flex gap-7 text-sm font-medium text-gray-700">
-              <a
-                href="/"
-                className="text-gray-900 border-b-2 pb-1"
-                style={{ borderColor: '#0d4d3d' }}
-              >
+              <a href="/" className="text-gray-900 border-b-2 pb-1" style={{ borderColor: '#0d4d3d' }}>
                 Plan new trip
               </a>
               <a href="/trips" className="hover:text-gray-900">
@@ -135,7 +135,7 @@ export default function Home() {
           </div>
           <div className="flex items-center gap-3">
             {user ? (
-              <>           
+              <>
                 <span className="text-sm text-gray-600 hidden sm:inline">{user.email}</span>
                 <button
                   onClick={signOut}
@@ -170,9 +170,9 @@ export default function Home() {
         }}
       >
         <div className="max-w-7xl mx-auto px-6 pt-12 pb-6">
-          <h1 className="text-4xl font-bold text-white mb-2">Holidays</h1>
+          <h1 className="text-4xl font-bold text-white mb-2">Plan your family holiday</h1>
           <p className="text-white/90 text-sm">
-            Discover tailor-made experiences crafted by AI — stress-free family travel
+            AI-crafted itineraries tailored for every generation — kids, parents, and grandparents
           </p>
         </div>
 
@@ -192,208 +192,204 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Mode toggle */}
-            <div className="px-6 pt-5">
-              <div className="inline-flex bg-gray-100 rounded-full p-1">
-                <button
-                  onClick={() => setMode('form')}
-                  className={`px-4 py-1.5 rounded-full text-sm font-medium transition ${
-                    mode === 'form' ? 'text-white shadow-sm' : 'text-gray-600'
-                  }`}
-                  style={mode === 'form' ? { backgroundColor: '#0d4d3d' } : {}}
-                >
-                  📋 Fill the form
-                </button>
-                <button
-                  onClick={() => setMode('prompt')}
-                  className={`px-4 py-1.5 rounded-full text-sm font-medium transition ${
-                    mode === 'prompt' ? 'text-white shadow-sm' : 'text-gray-600'
-                  }`}
-                  style={mode === 'prompt' ? { backgroundColor: '#0d4d3d' } : {}}
-                >
-                  💬 Describe it
-                </button>
-              </div>
-            </div>
-
             {/* Form body */}
             <div className="p-6">
-              {mode === 'form' ? (
-                <>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-5">
-                      <div className="border-b border-gray-200 pb-4">
-                        <label className="block text-xs text-gray-500 mb-1">Leaving from</label>
-                        <AirportInput
-                          value={form.leavingFrom}
-                          onChange={(v) => update('leavingFrom', v)}
-                          placeholder="e.g. Jakarta"
-                        />
-                      </div>
-
-                      <div className="border-b border-gray-200 pb-4">
-                        <label className="block text-xs text-gray-500 mb-1">Departing on</label>
-                        <input
-                          type="date"
-                          value={form.startDate}
-                          min={new Date().toISOString().split('T')[0]}
-                          onChange={(e) => {
-                            const newStart = e.target.value;
-                            update('startDate', newStart);
-                            // Auto-bump return date if it's now before start
-                            if (form.returnDate && form.returnDate <= newStart) {
-                              const next = new Date(newStart);
-                              next.setDate(next.getDate() + 1);
-                              update('returnDate', next.toISOString().split('T')[0]);
-                            }
-                          }}
-                          className="w-full text-lg font-semibold outline-none"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-5">
-                      <div className="border-b border-gray-200 pb-4">
-                        <label className="block text-xs text-gray-500 mb-1">Going to</label>
-                        <AirportInput
-                          value={form.destination}
-                          onChange={(v) => update('destination', v)}
-                          placeholder="e.g. Tokyo"
-                          disabledCode={
-                            form.leavingFrom.match(/\(([A-Z]{3})\)/)?.[1] || undefined
-                          }
-                        />
-                      </div>
-
-                      <div className="border-b border-gray-200 pb-4">
-                        <label className="block text-xs text-gray-500 mb-1">Returning on</label>
-                        <input
-                          type="date"
-                          value={form.returnDate}
-                          min={(() => {
-                            if (!form.startDate) return new Date().toISOString().split('T')[0];
-                            const d = new Date(form.startDate);
-                            d.setDate(d.getDate() + 1);
-                            return d.toISOString().split('T')[0];
-                          })()}
-                          onChange={(e) => update('returnDate', e.target.value)}
-                          className="w-full text-lg font-semibold outline-none"
-                        />
-                      </div>
-                    </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-5">
+                  <div
+                    className={`border-b pb-4 ${
+                      form.leavingFrom && !/\([A-Z]{3}\)$/.test(form.leavingFrom)
+                        ? 'border-red-400'
+                        : 'border-gray-200'
+                    }`}
+                  >
+                    <label className="block text-xs text-gray-500 mb-1">Leaving from</label>
+                    <AirportInput
+                      value={form.leavingFrom}
+                      onChange={(v) => update('leavingFrom', v)}
+                      placeholder="e.g. Jakarta"
+                      error={!!form.leavingFrom && !/\([A-Z]{3}\)$/.test(form.leavingFrom)}
+                    />
+                    {form.leavingFrom && !/\([A-Z]{3}\)$/.test(form.leavingFrom) && (
+                      <p className="text-xs text-red-500 mt-1">
+                        Pick an airport from the dropdown
+                      </p>
+                    )}
                   </div>
 
-                  {/* Travelers */}
-                  <div className="mt-6 border-t border-gray-200 pt-5">
-                    <label className="block text-xs text-gray-500 mb-2">Travelers</label>
-                    <div className="grid grid-cols-3 gap-4">
-                      <div>
-                        <label className="block text-xs text-gray-500 mb-1">Adults</label>
-                        <input
-                          type="number"
-                          min={0}
-                          value={form.adults}
-                          onChange={(e) => update('adults', parseInt(e.target.value) || 0)}
-                          className="w-full text-lg font-semibold outline-none border-b border-gray-200 pb-1"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-gray-500 mb-1">Seniors (60+)</label>
-                        <input
-                          type="number"
-                          min={0}
-                          value={form.elderly}
-                          onChange={(e) => update('elderly', parseInt(e.target.value) || 0)}
-                          className="w-full text-lg font-semibold outline-none border-b border-gray-200 pb-1"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-gray-500 mb-1">Children (2-12)</label>
-                        <input
-                          type="number"
-                          min={0}
-                          value={form.kids}
-                          onChange={(e) => update('kids', parseInt(e.target.value) || 0)}
-                          className="w-full text-lg font-semibold outline-none border-b border-gray-200 pb-1"
-                        />
-                      </div>
-                    </div>
+                  <div className="border-b border-gray-200 pb-4">
+                    <label className="block text-xs text-gray-500 mb-1">Departing on</label>
+                    <input
+                      type="date"
+                      value={form.startDate}
+                      min={new Date().toISOString().split('T')[0]}
+                      onChange={(e) => {
+                        const newStart = e.target.value;
+                        update('startDate', newStart);
+                        if (form.returnDate && form.returnDate <= newStart) {
+                          const next = new Date(newStart);
+                          next.setDate(next.getDate() + 1);
+                          update('returnDate', next.toISOString().split('T')[0]);
+                        }
+                      }}
+                      className="w-full text-lg font-semibold outline-none"
+                    />
                   </div>
-
-                  {/* Transport + Budget */}
-                  <div className="mt-6 border-t border-gray-200 pt-5 grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                      <label className="block text-xs text-gray-500 mb-2">Getting around</label>
-                      <div className="flex gap-2">
-                        {[
-                          { v: 'public', l: '🚇 Transit' },
-                          { v: 'rental', l: '🚗 Rental' },
-                          { v: 'mix', l: '🔀 Mix' },
-                        ].map((o) => (
-                          <button
-                            key={o.v}
-                            type="button"
-                            onClick={() => update('transport', o.v)}
-                            className={`px-3 py-1.5 rounded-full text-xs font-medium border transition ${
-                              form.transport === o.v
-                                ? 'text-white border-transparent'
-                                : 'bg-white text-gray-700 border-gray-300'
-                            }`}
-                            style={form.transport === o.v ? { backgroundColor: '#0d4d3d' } : {}}
-                          >
-                            {o.l}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs text-gray-500 mb-1">
-                        Trip Budget Guardrail
-                      </label>
-                      <div className="flex items-center gap-3">
-                        <span className="text-lg font-semibold whitespace-nowrap">
-                          ${form.budget.toLocaleString('en-US')}
-                        </span>
-                        <input
-                          type="range"
-                          min={1000}
-                          max={100000}
-                          step={1000}
-                          value={form.budget}
-                          onChange={(e) => update('budget', parseInt(e.target.value))}
-                          className="flex-1"
-                          style={{ accentColor: '#0d4d3d' }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <div>
-                  <label className="block text-xs text-gray-500 mb-2">
-                    Describe your dream family trip
-                  </label>
-                  <textarea
-                    value={prompt}
-                    onChange={(e) => setPrompt(e.target.value)}
-                    rows={6}
-                    className="w-full border border-gray-200 rounded-lg p-4 text-sm outline-none focus:border-green-800 resize-none"
-                    placeholder="e.g. 5 days in Tokyo with my wife, 2 young kids, and my parents. Budget around $8000. We want kid-friendly activities, a day of rest for us parents, and lots of food experiences."
-                  />
-                  <p className="text-xs text-gray-400 mt-2">
-                    AI will pick reasonable defaults for dates, budget, and transport.
-                  </p>
                 </div>
-              )}
+
+                <div className="space-y-5">
+                  <div
+                    className={`border-b pb-4 ${
+                      form.destination && !/\([A-Z]{3}\)$/.test(form.destination)
+                        ? 'border-red-400'
+                        : 'border-gray-200'
+                    }`}
+                  >
+                    <label className="block text-xs text-gray-500 mb-1">Going to</label>
+                    <AirportInput
+                      value={form.destination}
+                      onChange={(v) => update('destination', v)}
+                      placeholder="e.g. Tokyo"
+                      disabledCode={
+                        form.leavingFrom.match(/\(([A-Z]{3})\)/)?.[1] || undefined
+                      }
+                      error={!!form.destination && !/\([A-Z]{3}\)$/.test(form.destination)}
+                    />
+                    {form.destination && !/\([A-Z]{3}\)$/.test(form.destination) && (
+                      <p className="text-xs text-red-500 mt-1">
+                        Pick an airport from the dropdown
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="border-b border-gray-200 pb-4">
+                    <label className="block text-xs text-gray-500 mb-1">Returning on</label>
+                    <input
+                      type="date"
+                      value={form.returnDate}
+                      min={(() => {
+                        if (!form.startDate) return new Date().toISOString().split('T')[0];
+                        const d = new Date(form.startDate);
+                        d.setDate(d.getDate() + 1);
+                        return d.toISOString().split('T')[0];
+                      })()}
+                      onChange={(e) => update('returnDate', e.target.value)}
+                      className="w-full text-lg font-semibold outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Travelers */}
+              <div className="mt-6 border-t border-gray-200 pt-5">
+                <label className="block text-xs text-gray-500 mb-2">Travelers</label>
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Adults</label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={form.adults}
+                      onChange={(e) => update('adults', Math.max(1, parseInt(e.target.value) || 1))}
+                      className="w-full text-lg font-semibold outline-none border-b border-gray-200 pb-1"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Seniors (60+)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={form.elderly}
+                      onChange={(e) => update('elderly', parseInt(e.target.value) || 0)}
+                      className="w-full text-lg font-semibold outline-none border-b border-gray-200 pb-1"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Children (2-12)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={form.kids}
+                      onChange={(e) => update('kids', parseInt(e.target.value) || 0)}
+                      className="w-full text-lg font-semibold outline-none border-b border-gray-200 pb-1"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Transport + Budget */}
+              <div className="mt-6 border-t border-gray-200 pt-5 grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-xs text-gray-500 mb-2">Getting around</label>
+                  <div className="flex gap-2">
+                    {[
+                      { v: 'public', l: '🚇 Transit' },
+                      { v: 'rental', l: '🚗 Rental' },
+                      { v: 'mix', l: '🔀 Mix' },
+                    ].map((o) => (
+                      <button
+                        key={o.v}
+                        type="button"
+                        onClick={() => update('transport', o.v)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-medium border transition ${
+                          form.transport === o.v
+                            ? 'text-white border-transparent'
+                            : 'bg-white text-gray-700 border-gray-300'
+                        }`}
+                        style={form.transport === o.v ? { backgroundColor: '#0d4d3d' } : {}}
+                      >
+                        {o.l}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">
+                    Trip Budget Guardrail
+                  </label>
+                  <div className="flex items-center gap-3">
+                    <span className="text-lg font-semibold whitespace-nowrap">
+                      ${form.budget.toLocaleString('en-US')}
+                    </span>
+                    <input
+                      type="range"
+                      min={1000}
+                      max={100000}
+                      step={1000}
+                      value={form.budget}
+                      onChange={(e) => update('budget', parseInt(e.target.value))}
+                      className="flex-1"
+                      style={{ accentColor: '#0d4d3d' }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Notes field */}
+              <div className="mt-6 border-t border-gray-200 pt-5">
+                <label className="block text-xs text-gray-500 mb-1">
+                  Anything special? <span className="text-gray-400">(optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={form.notes}
+                  onChange={(e) => update('notes', e.target.value)}
+                  placeholder="e.g. cultural trip, foodie focus, relaxing pace, kid-friendly..."
+                  className="w-full text-sm outline-none border-b border-gray-200 pb-2 focus:border-green-700"
+                />
+                <p className="text-[11px] text-gray-400 mt-1">
+                  Hint: try "cultural", "adventure", "foodie", "relaxing", or "kid-focused"
+                </p>
+              </div>
 
               {/* CTA */}
               <div className="mt-6 flex justify-end">
                 <button
                   onClick={handleGenerate}
-                  disabled={loading}
-                  className="px-8 py-3 text-white font-semibold text-sm disabled:opacity-50 transition hover:opacity-90"
-                  style={{ backgroundColor: '#0d4d3d' }}
+                  disabled={loading || !canSubmit}
+                  className="px-8 py-3 text-white font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed transition hover:opacity-90"
+                  style={{ backgroundColor: canSubmit ? '#0d4d3d' : '#9ca3af' }}
                 >
                   {loading ? 'Planning your trip...' : 'Build your dream holiday'}
                 </button>
@@ -417,7 +413,7 @@ export default function Home() {
             {
               icon: '🤖',
               title: 'AI plans everything',
-              desc: 'From flights to dinner reservations — one prompt, complete itinerary.',
+              desc: 'Flights, hotels, restaurants, activities — one form, complete itinerary.',
             },
             {
               icon: '👨‍👩‍👧‍👦',
@@ -427,7 +423,7 @@ export default function Home() {
             {
               icon: '💬',
               title: '24/7 trip assistant',
-              desc: 'Chat with your AI assistant on Telegram. Reminders before every activity.',
+              desc: 'Chat with your AI concierge on Telegram. Ask anything, anytime.',
             },
           ].map((f) => (
             <div key={f.title} className="text-center">
