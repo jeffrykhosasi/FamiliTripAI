@@ -165,7 +165,62 @@ export default function ChecklistPage() {
     window.open(`https://t.me/share/url?url=&text=${text}`, '_blank');
   }
 
-  if (loading) return <p className="p-8">Loading checklist...</p>;
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <nav className="bg-white border-b border-gray-200">
+          <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+            <div className="h-6 w-32 bg-gray-200 rounded animate-pulse" />
+            <div className="h-8 w-24 bg-gray-200 rounded animate-pulse" />
+          </div>
+        </nav>
+
+        <div className="max-w-6xl mx-auto p-8">
+          <div className="bg-white rounded-2xl shadow-sm p-8 mb-6 animate-pulse">
+            <div className="h-8 w-72 bg-gray-200 rounded mb-3" />
+            <div className="h-4 w-96 bg-gray-200 rounded mb-6" />
+            <div className="h-3 bg-gray-200 rounded-full" />
+          </div>
+
+          <div className="grid lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2 space-y-4">
+              {[1, 2, 3].map((i) => (
+                <div
+                  key={i}
+                  className="bg-white rounded-2xl shadow-sm p-6 animate-pulse"
+                  style={{ animationDelay: `${i * 100}ms` }}
+                >
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="h-10 w-10 bg-gray-200 rounded-full" />
+                    <div>
+                      <div className="h-5 w-32 bg-gray-200 rounded mb-2" />
+                      <div className="h-3 w-40 bg-gray-200 rounded" />
+                    </div>
+                  </div>
+                  {[1, 2, 3, 4].map((item) => (
+                    <div key={item} className="flex items-center gap-3 py-2">
+                      <div className="h-4 w-4 bg-gray-200 rounded" />
+                      <div className="h-3 flex-1 bg-gray-200 rounded" />
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+
+            <div className="space-y-4">
+              {[1, 2].map((i) => (
+                <div
+                  key={i}
+                  className="bg-white rounded-2xl shadow-sm p-6 h-32 animate-pulse"
+                  style={{ animationDelay: `${i * 100}ms` }}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-gray-50">

@@ -259,7 +259,76 @@ export default function TripPage() {
     window.location.href = `/book/${id}`;
   }
 
-  if (loading) return <p className="p-8">Loading trip...</p>;
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <nav className="bg-white border-b border-gray-200">
+          <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+            <div className="h-6 w-32 bg-gray-200 rounded animate-pulse" />
+            <div className="h-8 w-24 bg-gray-200 rounded animate-pulse" />
+          </div>
+        </nav>
+
+        <main className="max-w-6xl mx-auto px-6 py-8">
+          {/* Hero skeleton */}
+          <div className="bg-white rounded-2xl shadow-sm p-8 mb-6 animate-pulse" style={{ borderLeft: '4px solid #e5e7eb' }}>
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <div className="h-8 w-48 bg-gray-200 rounded mb-3" />
+                <div className="h-4 w-64 bg-gray-200 rounded" />
+              </div>
+              <div className="text-right">
+                <div className="h-3 w-16 bg-gray-200 rounded mb-2 ml-auto" />
+                <div className="h-8 w-24 bg-gray-200 rounded ml-auto" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="bg-gray-50 rounded-lg p-3">
+                  <div className="h-3 w-16 bg-gray-200 rounded mb-2" />
+                  <div className="h-6 w-20 bg-gray-200 rounded" />
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-6 pt-6 border-t border-gray-200">
+              <div className="h-3 w-24 bg-gray-200 rounded mb-3" />
+              <div className="h-3 bg-gray-200 rounded-full w-full" />
+            </div>
+          </div>
+
+          {/* Days skeleton */}
+          {[1, 2, 3].map((dayNum) => (
+            <div
+              key={dayNum}
+              className="bg-white rounded-2xl shadow-sm p-6 mb-4 animate-pulse"
+              style={{ animationDelay: `${dayNum * 100}ms` }}
+            >
+              <div className="flex items-center gap-3 mb-4">
+                <div className="h-8 w-20 bg-gray-200 rounded-lg" />
+                <div className="h-4 w-32 bg-gray-200 rounded" />
+              </div>
+
+              {[1, 2].map((act) => (
+                <div key={act} className="border border-gray-200 rounded-xl mb-3 p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="h-4 w-14 bg-gray-200 rounded" />
+                    <div className="flex-1">
+                      <div className="h-4 w-48 bg-gray-200 rounded mb-2" />
+                      <div className="h-3 w-full bg-gray-200 rounded mb-1" />
+                      <div className="h-3 w-3/4 bg-gray-200 rounded" />
+                    </div>
+                    <div className="h-5 w-12 bg-gray-200 rounded" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ))}
+        </main>
+      </div>
+    );
+  }
   if (error) return <p className="p-8 text-red-600">Error: {error}</p>;
   if (!plan) return null;
 
