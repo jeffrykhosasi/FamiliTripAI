@@ -169,20 +169,20 @@ export default function Home() {
           backgroundPosition: 'center',
         }}
       >
-        <div className="max-w-7xl mx-auto px-6 pt-12 pb-6">
-          <h1 className="text-4xl font-bold text-white mb-2">Plan your family holiday</h1>
+        <div className="max-w-7xl mx-auto px-6 pt-8 pb-4">
+          <h1 className="text-3xl font-bold text-white mb-1">Plan your family holiday</h1>
           <p className="text-white/90 text-sm">
-            AI-crafted itineraries tailored for every generation — kids, parents, and grandparents
+            AI-crafted itineraries for every generation
           </p>
         </div>
 
         {/* Overlapping form card */}
-        <div className="max-w-7xl mx-auto px-6 pb-0 translate-y-16 relative z-10">
+        <div className="max-w-7xl mx-auto px-6 pb-0 translate-y-8 relative z-10">
           <div className="bg-white shadow-xl rounded-t-lg">
             {/* Single tab */}
             <div className="flex">
               <div
-                className="flex-1 py-4 px-6 text-left"
+                className="flex-1 py-3 px-6 text-left"
                 style={{ backgroundColor: '#0d4d3d', color: 'white' }}
               >
                 <div className="flex items-center justify-between">
@@ -193,8 +193,8 @@ export default function Home() {
             </div>
 
             {/* Form body */}
-            <div className="p-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="p-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <div className="space-y-5">
                   <div
                     className={`border-b pb-4 ${
@@ -281,7 +281,7 @@ export default function Home() {
               </div>
 
               {/* Travelers */}
-              <div className="mt-6 border-t border-gray-200 pt-5">
+              <div className="mt-5 border-t border-gray-200 pt-4">
                 <label className="block text-xs text-gray-500 mb-2">Travelers</label>
                 <div className="grid grid-cols-3 gap-4">
                   <div>
@@ -405,35 +405,137 @@ export default function Home() {
 
       <div className="h-20 bg-gradient-to-b from-transparent to-white" />
 
-      {/* Features preview */}
-      <div className="max-w-7xl mx-auto px-6 py-16">
-        <h2 className="text-2xl font-bold mb-8 text-center">Why families love us</h2>
-        <div className="grid md:grid-cols-3 gap-8">
-          {[
-            {
-              icon: '🤖',
-              title: 'AI plans everything',
-              desc: 'Flights, hotels, restaurants, activities — one form, complete itinerary.',
-            },
-            {
-              icon: '👨‍👩‍👧‍👦',
-              title: 'Built for families',
-              desc: 'Parents get a day off. Kids get activities. Grandparents stay comfortable.',
-            },
-            {
-              icon: '💬',
-              title: '24/7 trip assistant',
-              desc: 'Chat with your AI concierge on Telegram. Ask anything, anytime.',
-            },
-          ].map((f) => (
-            <div key={f.title} className="text-center">
-              <div className="text-4xl mb-3">{f.icon}</div>
-              <h3 className="font-semibold mb-2">{f.title}</h3>
-              <p className="text-sm text-gray-600">{f.desc}</p>
-            </div>
-          ))}
+      {/* ─── Feature section: How it works ─── */}
+      <div className="bg-gray-50 py-20">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="text-center mb-14">
+            <p className="text-xs font-semibold uppercase tracking-widest mb-2" style={{ color: '#0d4d3d' }}>
+              Plan less. Live more.
+            </p>
+            <h2 className="text-3xl font-bold text-gray-900 mb-3">
+              From idea to memories in three steps
+            </h2>
+            <p className="text-gray-600 max-w-2xl mx-auto">
+              We handle the stressful parts of family travel, so you can enjoy the moments that matter.
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-6 mb-16">
+            {[
+              {
+                step: '01',
+                icon: '✨',
+                title: 'Tell us about your trip',
+                desc: 'Dates, travelers, budget, and any special preferences — cultural, foodie, relaxing.',
+              },
+              {
+                step: '02',
+                title: 'AI crafts your itinerary',
+                icon: '🗺️',
+                desc: 'Full day-by-day plan with activities for every generation, plus a parents\' day off.',
+              },
+              {
+                step: '03',
+                icon: '📸',
+                title: 'Travel, share, remember',
+                desc: 'Send photos to your Telegram concierge. Get a branded album to share at the end.',
+              },
+            ].map((s, i) => (
+              <div
+                key={s.step}
+                className="bg-white rounded-2xl p-6 shadow-sm hover:shadow-md transition"
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <div
+                    className="text-3xl w-14 h-14 rounded-2xl flex items-center justify-center"
+                    style={{ backgroundColor: '#e8f0ed' }}
+                  >
+                    {s.icon}
+                  </div>
+                  <span
+                    className="text-4xl font-bold opacity-20"
+                    style={{ color: '#0d4d3d' }}
+                  >
+                    {s.step}
+                  </span>
+                </div>
+                <h3 className="text-lg font-bold mb-2">{s.title}</h3>
+                <p className="text-sm text-gray-600 leading-relaxed">{s.desc}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Feature grid */}
+          <div className="text-center mb-10">
+            <h2 className="text-2xl font-bold text-gray-900">
+              Everything your family needs
+            </h2>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {[
+              { icon: '🎯', label: 'Budget-aware planning' },
+              { icon: '🚗', label: 'Car + transit options' },
+              { icon: '💆', label: 'Parents\' day off' },
+              { icon: '📋', label: 'AI packing checklist' },
+              { icon: '📱', label: 'WhatsApp-style concierge' },
+              { icon: '✈️', label: 'Airport transfers' },
+              { icon: '📸', label: 'Photo collection' },
+              { icon: '🎬', label: 'Shareable album' },
+            ].map((f) => (
+              <div
+                key={f.label}
+                className="bg-white rounded-xl p-4 text-center border border-gray-100 hover:border-green-700 transition"
+              >
+                <div className="text-2xl mb-2">{f.icon}</div>
+                <p className="text-xs font-medium text-gray-700">{f.label}</p>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
+
+      {/* ─── Testimonial / CTA section ─── */}
+      <div
+        className="py-20 text-center"
+        style={{
+          backgroundImage: 'linear-gradient(rgba(13, 77, 61, 0.9), rgba(13, 77, 61, 0.95)), url(https://images.unsplash.com/photo-1540959733332-eab4deabeeaf?w=1600&q=80)',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+        }}
+      >
+        <div className="max-w-3xl mx-auto px-6">
+          <p className="text-4xl mb-4">🌏</p>
+          <h2 className="text-2xl md:text-3xl font-bold text-white mb-4">
+            Ready for a stress-free family holiday?
+          </h2>
+          <p className="text-white/80 mb-8 max-w-xl mx-auto">
+            Plan your next trip in minutes. No more frantic spreadsheet planning or
+            last-minute panic. Just the good parts.
+          </p>
+          <a
+            href="#top"
+            onClick={(e) => {
+              e.preventDefault();
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            className="inline-block bg-white px-8 py-3 rounded-lg font-semibold hover:bg-gray-100 transition"
+            style={{ color: '#0d4d3d' }}
+          >
+            Start planning →
+          </a>
+        </div>
+      </div>
+
+      {/* ─── Footer ─── */}
+      <footer className="border-t border-gray-200 py-8 text-center text-xs text-gray-500">
+        <p>FamilyTrip AI · Making family travel easier, one trip at a time</p>
+        <p className="mt-2">
+          <a href="/" className="hover:underline">Plan a trip</a>
+          <span className="mx-2">·</span>
+          <a href="/trips" className="hover:underline">My trips</a>
+        </p>
+      </footer>
     </div>
   );
 }
