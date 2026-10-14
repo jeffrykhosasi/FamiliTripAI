@@ -296,20 +296,48 @@ export default function ChecklistPage() {
 
         {/* Empty state */}
         {items.length === 0 && (
-          <div className="bg-white rounded-2xl shadow-sm p-12 text-center mb-6">
-            <p className="text-5xl mb-4">🎒</p>
-            <h2 className="font-bold text-lg mb-2">No checklist yet</h2>
-            <p className="text-gray-600 mb-6">
-              Let AI build a smart packing list based on your activities, destination, and travelers.
+          <div
+            className="bg-white rounded-2xl shadow-sm p-12 text-center mb-6 relative overflow-hidden"
+            style={{
+              backgroundImage:
+                'radial-gradient(circle at 15% 15%, rgba(13, 77, 61, 0.05) 0%, transparent 50%), radial-gradient(circle at 85% 85%, rgba(212, 165, 116, 0.05) 0%, transparent 50%)',
+            }}
+          >
+            <div
+              className="inline-flex items-center justify-center w-20 h-20 rounded-full mb-5 text-4xl"
+              style={{ backgroundColor: '#e8f0ed' }}
+            >
+              🎒
+            </div>
+            <h2 className="text-2xl font-bold mb-3">
+              Nothing packed yet — let's fix that
+            </h2>
+            <p className="text-gray-600 mb-6 max-w-lg mx-auto leading-relaxed">
+              Our AI reads your itinerary and generates a smart packing list for each
+              traveler — tailored to the destination, weather, and activities.
             </p>
+            <div className="flex flex-wrap justify-center gap-3 mb-6">
+              <span className="text-xs bg-green-50 text-green-800 px-3 py-1.5 rounded-full font-medium">
+                ✓ Kid-friendly items
+              </span>
+              <span className="text-xs bg-blue-50 text-blue-800 px-3 py-1.5 rounded-full font-medium">
+                ✓ Senior medications
+              </span>
+              <span className="text-xs bg-yellow-50 text-yellow-800 px-3 py-1.5 rounded-full font-medium">
+                ✓ Weather-aware
+              </span>
+            </div>
             <button
               onClick={seed}
               disabled={generating}
-              className="text-white px-8 py-3 rounded-lg font-semibold disabled:opacity-50"
+              className="text-white px-8 py-3 rounded-lg font-semibold disabled:opacity-50 hover:opacity-90 transition"
               style={{ backgroundColor: '#0d4d3d' }}
             >
-              {generating ? '✨ Generating...' : '✨ AI-generate checklist'}
+              {generating ? '✨ Generating your list...' : '✨ Generate my packing list'}
             </button>
+            <p className="text-xs text-gray-400 mt-4">
+              Takes about 10 seconds
+            </p>
           </div>
         )}
 

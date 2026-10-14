@@ -115,19 +115,37 @@ export default function TripsPage() {
         )}
 
         {trips.length === 0 && (
-          <div className="bg-white rounded-2xl shadow-sm p-16 text-center">
-            <p className="text-6xl mb-4">🌏</p>
-            <h2 className="text-xl font-bold mb-2">No trips yet</h2>
-            <p className="text-gray-500 mb-6">
-              Plan your first family adventure with AI.
+          <div
+            className="bg-white rounded-2xl shadow-sm p-16 text-center relative overflow-hidden"
+            style={{
+              backgroundImage:
+                'radial-gradient(circle at 20% 20%, rgba(13, 77, 61, 0.05) 0%, transparent 50%), radial-gradient(circle at 80% 80%, rgba(212, 165, 116, 0.05) 0%, transparent 50%)',
+            }}
+          >
+            <div
+              className="inline-flex items-center justify-center w-20 h-20 rounded-full mb-6 text-4xl"
+              style={{ backgroundColor: '#e8f0ed' }}
+            >
+              ✈️
+            </div>
+            <h2 className="text-2xl font-bold mb-3">
+              Your first adventure awaits
+            </h2>
+            <p className="text-gray-600 mb-8 max-w-md mx-auto leading-relaxed">
+              Tell us where you want to go and who's coming along. We'll craft a
+              stress-free itinerary in minutes — complete with activities for every
+              generation.
             </p>
             <a
               href="/"
-              className="inline-block text-white px-8 py-3 rounded-lg font-semibold"
+              className="inline-block text-white px-8 py-3 rounded-lg font-semibold hover:opacity-90 transition"
               style={{ backgroundColor: '#0d4d3d' }}
             >
-              Plan a trip →
+              ✨ Plan your first trip
             </a>
+            <p className="text-xs text-gray-400 mt-6">
+              Average planning time: 20 seconds
+            </p>
           </div>
         )}
 

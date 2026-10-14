@@ -97,19 +97,51 @@ export default function PhotosPage() {
         </div>
 
         {photos.length === 0 ? (
-          <div className="bg-white rounded-2xl shadow-xl p-12 text-center">
-            <p className="text-5xl mb-4">📸</p>
-            <h2 className="font-bold text-lg mb-2">No photos yet</h2>
-            <p className="text-gray-600 mb-4">
-              Send a photo to your Telegram bot during the trip. It'll show up here.
+          <div
+            className="bg-white rounded-2xl shadow-xl p-12 text-center relative overflow-hidden"
+            style={{
+              backgroundImage:
+                'radial-gradient(circle at 20% 20%, rgba(0, 136, 204, 0.05) 0%, transparent 50%), radial-gradient(circle at 80% 80%, rgba(13, 77, 61, 0.05) 0%, transparent 50%)',
+            }}
+          >
+            <div
+              className="inline-flex items-center justify-center w-20 h-20 rounded-full mb-5 text-4xl"
+              style={{ backgroundColor: '#e6f4fa' }}
+            >
+              📸
+            </div>
+            <h2 className="text-2xl font-bold mb-3">
+              Turn your trip into memories
+            </h2>
+            <p className="text-gray-600 mb-6 max-w-md mx-auto leading-relaxed">
+              Send photos to your trip concierge on Telegram as you travel. They'll
+              gather here — and at the end of your trip, we'll turn them into a
+              branded album you can share.
             </p>
+
+            <div className="grid grid-cols-3 gap-3 max-w-md mx-auto mb-6">
+              {['🏯 Photos on the go', '🎨 Auto-arranged album', '📱 Share with family'].map((item) => (
+                <div
+                  key={item}
+                  className="bg-gray-50 rounded-lg p-3 text-xs font-medium text-gray-700"
+                >
+                  {item}
+                </div>
+              ))}
+            </div>
+
             <a
-              href={`/book/${tripId}`}
-              className="inline-block text-white px-6 py-3 rounded-lg font-semibold"
+              href={`https://t.me/familytrip_ai_bot?start=${tripId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-block text-white px-8 py-3 rounded-lg font-semibold hover:opacity-90 transition"
               style={{ backgroundColor: '#0088cc' }}
             >
-              💬 Open Telegram bot
+              💬 Open Telegram & send your first photo
             </a>
+            <p className="text-xs text-gray-400 mt-4">
+              No app download needed
+            </p>
           </div>
         ) : (
           <>
