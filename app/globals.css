@@ -24,3 +24,43 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* ─── Mobile contrast improvements ─── */
+
+/* Force readable text colors */
+.text-gray-500 {
+  color: #4b5563 !important; /* darker than default gray-500 */
+}
+
+.text-gray-400 {
+  color: #6b7280 !important; /* darker than default gray-400 */
+}
+
+.text-gray-600 {
+  color: #374151 !important;
+}
+
+/* Force black text on all inputs — mobile browsers were graying them */
+input,
+textarea,
+select {
+  color: #000 !important;
+  -webkit-text-fill-color: #000 !important;
+}
+
+/* Placeholder text shouldn't be too light */
+input::placeholder,
+textarea::placeholder {
+  color: #9ca3af !important;
+  opacity: 1 !important;
+}
+
+/* Ensure disabled buttons are still readable */
+button:disabled {
+  opacity: 0.6 !important;
+}
+
+/* Better contrast for the "Travelers" labels and small text */
+.text-xs {
+  color: inherit;
+}

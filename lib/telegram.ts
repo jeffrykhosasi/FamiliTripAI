@@ -3,6 +3,15 @@ import TelegramBot from 'node-telegram-bot-api';
 import { GoogleGenAI } from '@google/genai';
 import { supabase } from '@/lib/db';
 
+// Prevent unhandled rejection crashes from the losing race promise
+process.on('unhandledRejection', (reason: any) => {
+  if (reason?.message === 'CANCELLED' || reason?.message?.includes('aborted')) {
+    // Silently ignore — this is expected when a race loser is cancelled
+    return;
+  }
+  console.error('Unhandled rejection:', reason);
+});
+
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
 const GEMINI_MODELS = [
@@ -539,6 +548,10 @@ export function getBot() {
           console.log(`✅ Gemini won race in ${Date.now() - t0}ms`);
           return result;
         } catch (e: any) {
+          if (cancelled || e.message === 'CANCELLED') {
+            console.log(`🚫 Gemini was cancelled before completing (${Date.now() - t0}ms)`);
+            throw new Error('CANCELLED');
+          }
           console.log(`❌ Gemini failed: ${e.message}`);
           throw e;
         }
@@ -555,6 +568,11 @@ export function getBot() {
           console.log(`✅ OpenRouter won race in ${Date.now() - t0}ms`);
           return result;
         } catch (e: any) {
+          // Silently swallow errors if we were cancelled (Gemini already won)
+          if (cancelled || e.message === 'CANCELLED') {
+            console.log(`🚫 OpenRouter was cancelled before completing (${Date.now() - t0}ms)`);
+            throw new Error('CANCELLED');
+          }
           console.log(`❌ OpenRouter failed: ${e.message}`);
           throw e;
         }
