@@ -3,15 +3,6 @@ import TelegramBot from 'node-telegram-bot-api';
 import { GoogleGenAI } from '@google/genai';
 import { supabase } from '@/lib/db';
 
-// Prevent unhandled rejection crashes from the losing race promise
-process.on('unhandledRejection', (reason: any) => {
-  if (reason?.message === 'CANCELLED' || reason?.message?.includes('aborted')) {
-    // Silently ignore — this is expected when a race loser is cancelled
-    return;
-  }
-  console.error('Unhandled rejection:', reason);
-});
-
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
 const GEMINI_MODELS = [
@@ -20,6 +11,125 @@ const GEMINI_MODELS = [
   'gemini-3.8-flash',
 ];
 
+// ─── Prevent unhandled rejections from race-losing promises ───
+process.on('unhandledRejection', (reason: any) => {
+  const msg = reason?.message || String(reason);
+  if (msg === 'CANCELLED' || msg.includes('aborted')) {
+    return;
+  }
+  console.error('Unhandled rejection:', reason);
+});
+
+// ─── Reminder scheduler ───
+let reminderInterval: NodeJS.Timeout | null = null;
+const sentReminders = new Set<string>();
+
+function startReminderScheduler() {
+  if (reminderInterval) return;
+
+  console.log('⏰ Starting reminder scheduler (checks every 60s)');
+
+  reminderInterval = setInterval(async () => {
+    try {
+      await checkAndSendReminders();
+    } catch (e: any) {
+      console.error('Reminder check failed:', e.message);
+    }
+  }, 60 * 1000);
+}
+
+async function checkAndSendReminders() {
+  const { data: links } = await supabase
+    .from('telegram_links')
+    .select('trip_id, telegram_chat_id');
+
+  if (!links || links.length === 0) return;
+
+  const now = new Date();
+
+  for (const link of links) {
+    const { data: trip } = await supabase
+      .from('trips')
+      .select('*')
+      .eq('id', link.trip_id)
+      .single();
+
+    if (!trip?.plan) continue;
+
+    const plan = trip.plan;
+    const days = plan.dailyPlans || plan.days || [];
+    if (!plan.startDate) continue;
+
+    const tripStart = new Date(plan.startDate);
+    tripStart.setHours(0, 0, 0, 0);
+
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+
+    const currentDayNum =
+      Math.floor((todayStart.getTime() - tripStart.getTime()) / 86400000) + 1;
+
+    const currentDay = days.find((d: any) => d.day === currentDayNum);
+    if (!currentDay) continue;
+
+    for (let i = 0; i < (currentDay.activities || []).length; i++) {
+      const activity = currentDay.activities[i];
+      const timeMatch = (activity.time || '').match(/(\d{1,2}):(\d{2})/);
+      if (!timeMatch) continue;
+
+      const actTime = new Date(todayStart);
+      actTime.setHours(parseInt(timeMatch[1]), parseInt(timeMatch[2]), 0, 0);
+
+      const diffMinutes = (actTime.getTime() - now.getTime()) / 60000;
+
+      const reminderKey = `${link.trip_id}-${currentDayNum}-${i}`;
+      if (
+        diffMinutes >= 28 &&
+        diffMinutes <= 32 &&
+        !sentReminders.has(reminderKey)
+      ) {
+        sentReminders.add(reminderKey);
+        await sendActivityReminder(
+          link.telegram_chat_id,
+          activity,
+          diffMinutes,
+          trip
+        );
+      }
+    }
+  }
+}
+
+async function sendActivityReminder(
+  chatId: number,
+  activity: any,
+  minutesUntil: number,
+  trip: any
+) {
+  const t = activity.transport || {};
+  const transportInfo =
+    t.recommended === 'car' && t.car?.available
+      ? `🚗 Drive: ${t.car.details}`
+      : t.public?.available
+      ? `🚇 ${t.public.details}`
+      : '';
+
+  const message =
+    `⏰ *Heads up — ${Math.round(minutesUntil)} minutes*\n\n` +
+    `*${activity.title}* at ${activity.time}\n\n` +
+    (activity.description ? `${activity.description}\n\n` : '') +
+    (transportInfo ? `${transportInfo}\n\n` : '') +
+    `_Ask me "what's today?" for full details._`;
+
+  try {
+    await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+    console.log(`⏰ Reminder sent to chat ${chatId}: ${activity.title}`);
+  } catch (e: any) {
+    console.error('Failed to send reminder:', e.message);
+  }
+}
+
+// ─── Bot state ───
 const globalForBot = globalThis as unknown as {
   telegramBot: any;
 };
@@ -27,8 +137,10 @@ const globalForBot = globalThis as unknown as {
 let bot: any = globalForBot.telegramBot || null;
 const userChatIds = new Set<number>();
 
-// In-memory conversation history (last 10 messages per chat)
-const conversationHistory: Record<number, Array<{ role: 'user' | 'model'; text: string }>> = {};
+const conversationHistory: Record<
+  number,
+  Array<{ role: 'user' | 'model'; text: string }>
+> = {};
 
 function remember(chatId: number, role: 'user' | 'model', text: string) {
   if (!conversationHistory[chatId]) conversationHistory[chatId] = [];
@@ -42,7 +154,7 @@ function getHistory(chatId: number) {
   return conversationHistory[chatId] || [];
 }
 
-// ─── Build a rich system prompt from the trip data ───
+// ─── Build system prompt from trip data ───
 function buildSystemPrompt(trip: any): string {
   const plan = trip.plan || {};
   const days = plan.dailyPlans || plan.days || [];
@@ -56,16 +168,15 @@ function buildSystemPrompt(trip: any): string {
       const acts = (d.activities || [])
         .map(
           (a: any) =>
-            `    ${a.time} — ${a.title} ($${a.cost_usd || 0})\n      ${a.description || ''}`
+            `    ${a.time} — ${a.title} (HK$${a.cost_usd || 0})\n      ${a.description || ''}`
         )
         .join('\n');
       return `Day ${d.day} (${d.date || ''}) — ${d.theme || ''}\n${acts}`;
     })
     .join('\n\n');
 
-  const travelerNames = travelers
-    .map((t: any) => `${t.name} (${t.role})`)
-    .join(', ') || 'Family';
+  const travelerNames =
+    travelers.map((t: any) => `${t.name} (${t.role})`).join(', ') || 'Family';
 
   const rentalCar = plan.rentalCar?.recommended
     ? `\nRENTAL CAR: ${plan.rentalCar.type} · HK$${plan.rentalCar.dailyPrice}/day`
@@ -77,7 +188,7 @@ Today: ${today}
 DESTINATION: ${plan.destination || trip.destination}
 DATES: ${plan.startDate} → ${plan.returnDate} (${plan.days} days)
 TRAVELERS: ${travelerNames}
-BUDGET: $${trip.budget_usd || plan.budgetBreakdown?.total || 0}${rentalCar}
+BUDGET: HK$${trip.budget_usd || plan.budgetBreakdown?.total || 0}${rentalCar}
 
 THEIR FULL ITINERARY:
 ${itineraryText || '(No activities planned yet)'}
@@ -88,7 +199,7 @@ ${Object.entries(budget)
   .join('\n')}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-CRITICAL INSTRUCTIONS — READ CAREFULLY
+CRITICAL INSTRUCTIONS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 The itinerary above is a SCHEDULE. It tells you what they have BOOKED. It is NOT the sum total of everything they might want to know.
@@ -109,25 +220,24 @@ When a user asks about something and their itinerary happens to have an activity
 
 3. User: "Is it safe in Hong Kong?"
    ❌ WRONG: "Your itinerary includes a hotel in Kowloon."
-   ✅ RIGHT: "Hong Kong is very safe — one of the lowest crime rates in Asia. Just watch for pickpockets in crowded areas like Mong Kok, and use Octopus cards instead of cash. You'll be fine. 😊"
+   ✅ RIGHT: "Hong Kong is very safe — one of the lowest crime rates in Asia. Just watch for pickpockets in crowded areas like Mong Kok. You'll be fine. 😊"
 
 4. User: "What's the weather like?"
    ❌ WRONG: "I don't have weather data in your itinerary."
-   ✅ RIGHT: "Late October in Hong Kong is gorgeous — 22-28°C, low humidity, mostly sunny. Perfect for walking around. Pack light layers. ☀️"
+   ✅ RIGHT: "Late October in Hong Kong is gorgeous — 22-28°C, low humidity, mostly sunny. Pack light layers. ☀️"
 
 **The rule:** Ask yourself, "What does the USER want to know?" Not "What's in the itinerary that matches a keyword?"
 
 **When to use the itinerary:**
-- "What's today?" → use itinerary
-- "What's my schedule?" → use itinerary
-- "How much does this cost?" (about a specific booked activity) → use itinerary
+- "What's today?" / "What's my schedule?" → use itinerary
+- "How much does this cost?" → use itinerary
 - "Who's traveling?" → use travelers list
 
 **When to use your own knowledge:**
 - "What should I see/do/eat in [destination]?" → local knowledge
 - "What's popular/famous/must-see?" → local knowledge
 - "Is it safe?" / "Is it worth it?" / "Should I?" → local knowledge
-- "What's the weather?" → general knowledge + best guess
+- "What's the weather?" → general knowledge
 
 **Combining both is best:**
 If the answer connects to their itinerary, mention it: "You're already going to X — great choice! Also try Y nearby."
@@ -142,9 +252,9 @@ Instead:
 1. Acknowledge warmly and reassure them.
 2. Tell them you've flagged it to the admin team.
 3. Give a realistic time estimate (within 2 hours during daytime).
-4. Ask one clarifying question if needed so the admin has context.
+4. Ask one clarifying question if needed.
 
-CRITICAL: When you handle such a request, you MUST end your reply with the exact tag [CREATE_TICKET] on its own line. This tells the system to notify the admin team.
+CRITICAL: When you handle such a request, you MUST end your reply with the exact tag [CREATE_TICKET] on its own line.
 
 EXAMPLES:
 
@@ -152,43 +262,34 @@ User: "Can I cancel my Disney ticket and get a refund?"
 ✅ RIGHT: "Of course — I've flagged this to our admin team and they'll reach out to you within 2 hours with refund options for your Disney VIP booking. Is there a specific reason for the cancellation I should pass along?\n\n[CREATE_TICKET]"
 
 User: "Can you book me an extra night at the hotel?"
-✅ RIGHT: "Absolutely — I've passed this to our admin team and they'll contact you within 2 hours to check availability at your hotel. Do you prefer the same room type?\n\n[CREATE_TICKET]"
-
-User: "Change my flight to Friday"
-✅ RIGHT: "Got it — I've notified our admin team and they'll reach out within 2 hours about flight changes. Is Friday morning or evening better?\n\n[CREATE_TICKET]"
-
-User: "The hotel was terrible, I want to complain"
-✅ RIGHT: "I'm so sorry to hear that — I've escalated this to our admin team and they'll personally reach out within 2 hours. Can you share the main issue so they can come prepared?\n\n[CREATE_TICKET]"
+✅ RIGHT: "Absolutely — I've passed this to our admin team and they'll contact you within 2 hours to check availability. Do you prefer the same room type?\n\n[CREATE_TICKET]"
 
 RULES:
-- Never say "I can't help with that" or "I'm unable to..."
-- Never suggest they "contact the vendor directly" — that's OUR job as their concierge.
-- Always reassure with a specific timeframe (2 hours).
-- Always end with [CREATE_TICKET] for these requests.
-- Ask ONE clarifying question to give the admin context.
-- Do NOT end with [CREATE_TICKET] for normal questions like "what's today" or "what should I eat".
-
-TONE: reassuring, warm, competent. Like a hotel concierge who handles things behind the scenes.
+- Never say "I can't help with that"
+- Never suggest they "contact the vendor directly" — that's OUR job
+- Always reassure with a specific timeframe (2 hours)
+- Always end with [CREATE_TICKET] for these requests
+- Ask ONE clarifying question
+- Do NOT end with [CREATE_TICKET] for normal questions
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 CURRENCY:
 - All prices in the itinerary, budget, and activity data are in HK$ (Hong Kong Dollars).
 - When quoting prices in your replies, use HK$ — never USD or $.
-- If the user asks about money, answer in HK$.
 
 TONE:
 - Warm and helpful like a savvy local friend.
 - Match their energy (short → short, long → thoughtful).
 - Under 100 words usually. Use 1-2 emojis max.
-- Don't be robotic. Use contractions and casual phrasing.
+- Use contractions and casual phrasing.
 
 LINKS:
 - Full itinerary: ${appUrl}/itinerary/${trip.id}
 - Recap: ${appUrl}/recap/${trip.id}`;
 }
 
-// ─── Gemini with 15-second hard timeout ───
+// ─── Gemini with 15s budget ───
 async function askGemini(
   systemPrompt: string,
   history: Array<{ role: 'user' | 'model'; text: string }>,
@@ -201,7 +302,7 @@ async function askGemini(
   for (const model of GEMINI_MODELS) {
     const elapsed = Date.now() - startTime;
     if (elapsed > MAX_WAIT_MS) {
-      console.log(`⏰ Gemini budget exceeded (${elapsed}ms), giving up`);
+      console.log(`⏰ Gemini budget exceeded (${elapsed}ms)`);
       break;
     }
 
@@ -212,7 +313,9 @@ async function askGemini(
       contents.push({ role: 'user', parts: [{ text: systemPrompt }] });
       contents.push({
         role: 'model',
-        parts: [{ text: 'Understood. I am ready to assist this family with their trip.' }],
+        parts: [
+          { text: 'Understood. I am ready to assist this family with their trip.' },
+        ],
       });
 
       for (const h of history) {
@@ -294,9 +397,9 @@ async function askOpenRouter(
 
   const FREE_MODELS = [
     'google/gemma-4-31b-it:free',
-    'openai/gpt-oss-20b:free',
-    'nvidia/nemotron-3-super-120b-a12b:free',
-    'nvidia/nemotron-3.5-lightning:free',
+    'meta-llama/llama-3.3-70b-instruct:free',
+    'deepseek/deepseek-chat-v3.1:free',
+    'qwen/qwen-2.5-72b-instruct:free',
   ];
 
   let lastError: any = null;
@@ -319,12 +422,7 @@ async function askOpenRouter(
       clearTimeout(timeoutId);
 
       const text = response.choices[0]?.message?.content || '';
-      const finishReason = response.choices[0]?.finish_reason;
-
       if (!text) throw new Error('Empty response');
-      if (finishReason === 'length') {
-        console.log(`⚠️ Response truncated by max_tokens (${text.length} chars)`);
-      }
 
       console.log(`✅ OpenRouter succeeded with ${model}`);
       return text;
@@ -347,6 +445,7 @@ function localFallback(trip: any, text: string): string {
   );
 }
 
+// ─── Bot initialization ───
 export function getBot() {
   if (bot) return bot;
 
@@ -393,14 +492,19 @@ export function getBot() {
         return;
       }
 
-      await supabase.from('telegram_links').delete().eq('telegram_chat_id', chatId);
+      await supabase
+        .from('telegram_links')
+        .delete()
+        .eq('telegram_chat_id', chatId);
 
-      const { error: linkError } = await supabase.from('telegram_links').insert({
-        trip_id: tripId,
-        telegram_chat_id: chatId,
-        telegram_username: msg.from?.username || null,
-        telegram_first_name: firstName,
-      });
+      const { error: linkError } = await supabase
+        .from('telegram_links')
+        .insert({
+          trip_id: tripId,
+          telegram_chat_id: chatId,
+          telegram_username: msg.from?.username || null,
+          telegram_first_name: firstName,
+        });
 
       if (linkError) {
         console.error('Link save failed:', linkError);
@@ -409,7 +513,6 @@ export function getBot() {
       }
 
       console.log(`✅ Linked chat ${chatId} to trip ${tripId}`);
-
       conversationHistory[chatId] = [];
 
       await reply(
@@ -485,7 +588,9 @@ export function getBot() {
 
         console.log(`📸 Photo saved for trip ${link.trip_id}. Total: ${count}`);
         await reply(
-          `📸 Saved! You now have ${count} photo${count === 1 ? '' : 's'} in your recap.\n\nSend more, or ask me anything about your trip.`
+          `📸 Saved! You now have ${count} photo${
+            count === 1 ? '' : 's'
+          } in your recap.\n\nSend more, or ask me anything about your trip.`
         );
       } catch (e: any) {
         console.error('Photo handler error:', e);
@@ -537,63 +642,75 @@ export function getBot() {
       // ─── Cancellable AI calls ───
       let cancelled = false;
 
-      const geminiCall = (async (): Promise<string> => {
+      const geminiCall = (async (): Promise<string | null> => {
         const t0 = Date.now();
         try {
           const result = await askGemini(systemPrompt, history, text);
           if (cancelled) {
             console.log(`🚫 Gemini finished but was cancelled (${Date.now() - t0}ms)`);
-            throw new Error('CANCELLED');
+            return null;
           }
           console.log(`✅ Gemini won race in ${Date.now() - t0}ms`);
           return result;
         } catch (e: any) {
-          if (cancelled || e.message === 'CANCELLED') {
-            console.log(`🚫 Gemini was cancelled before completing (${Date.now() - t0}ms)`);
-            throw new Error('CANCELLED');
+          if (cancelled) {
+            console.log(`🚫 Gemini cancelled (${Date.now() - t0}ms)`);
+            return null;
           }
           console.log(`❌ Gemini failed: ${e.message}`);
           throw e;
         }
-      })();
+      })().catch((err) => {
+        console.log(`🚫 Gemini swallowed error: ${err.message}`);
+        return null;
+      });
 
-      const openRouterCall = (async (): Promise<string> => {
+      const openRouterCall = (async (): Promise<string | null> => {
         const t0 = Date.now();
         try {
           const result = await askOpenRouter(systemPrompt, history, text);
           if (cancelled) {
             console.log(`🚫 OpenRouter finished but was cancelled (${Date.now() - t0}ms)`);
-            throw new Error('CANCELLED');
+            return null;
           }
           console.log(`✅ OpenRouter won race in ${Date.now() - t0}ms`);
           return result;
         } catch (e: any) {
-          // Silently swallow errors if we were cancelled (Gemini already won)
-          if (cancelled || e.message === 'CANCELLED') {
-            console.log(`🚫 OpenRouter was cancelled before completing (${Date.now() - t0}ms)`);
-            throw new Error('CANCELLED');
+          if (cancelled) {
+            console.log(`🚫 OpenRouter cancelled (${Date.now() - t0}ms)`);
+            return null;
           }
           console.log(`❌ OpenRouter failed: ${e.message}`);
           throw e;
         }
-      })();
+      })().catch((err) => {
+        console.log(`🚫 OpenRouter swallowed error: ${err.message}`);
+        return null;
+      });
 
       // ─── Phase 1: 5s head start for Gemini ───
       try {
-        response = await Promise.race([
+        const result = await Promise.race([
           geminiCall,
-          new Promise<string>((_, rej) =>
-            setTimeout(() => rej(new Error('HEADSTART_EXPIRED')), 5000)
-          ),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
         ]);
-        winner = 'gemini';
+        if (result) {
+          response = result;
+          winner = 'gemini';
+        } else {
+          throw new Error('HEADSTART_EXPIRED');
+        }
       } catch (headErr: any) {
         if (headErr.message === 'HEADSTART_EXPIRED') {
-          // ─── Phase 2: Race both ───
           console.log('⏱️ Gemini slow — racing against OpenRouter...');
           try {
-            response = await Promise.race([geminiCall, openRouterCall]);
-            winner = 'openrouter';
+            const result = await Promise.race([geminiCall, openRouterCall]);
+            if (result) {
+              response = result;
+              winner = 'openrouter';
+            } else {
+              throw new Error('BOTH_NULL');
+            }
           } catch {
             console.log('❌ Both failed — using local fallback');
             response = localFallback(trip, text);
@@ -601,10 +718,11 @@ export function getBot() {
           }
         } else {
           console.log('❌ Gemini errored fast — trying OpenRouter...');
-          try {
-            response = await openRouterCall;
+          const result = await openRouterCall;
+          if (result) {
+            response = result;
             winner = 'openrouter';
-          } catch {
+          } else {
             console.log('❌ OpenRouter failed — using local fallback');
             response = localFallback(trip, text);
             winner = 'local';
@@ -615,7 +733,7 @@ export function getBot() {
       cancelled = true;
       console.log(`🏆 Winner: ${winner}`);
 
-      // ─── Check if the bot wants to create a support ticket ───
+      // ─── Support ticket detection ───
       if (response.includes('[CREATE_TICKET]')) {
         const cleanResponse = response.replace(/\[CREATE_TICKET\]/g, '').trim();
 
@@ -653,6 +771,7 @@ export function getBot() {
   });
 
   console.log('🤖 Telegram bot is running...');
+  startReminderScheduler();
   return bot;
 }
 
