@@ -154,8 +154,8 @@ function getHistory(chatId: number) {
   return conversationHistory[chatId] || [];
 }
 
-// ─── Build system prompt from trip data ───
-function buildSystemPrompt(trip: any): string {
+// ─── Build system prompt ───
+function buildSystemPrompt(trip: any, checklistItems: any[] = []): string {
   const plan = trip.plan || {};
   const days = plan.dailyPlans || plan.days || [];
   const travelers = plan.travelers || [];
@@ -182,6 +182,19 @@ function buildSystemPrompt(trip: any): string {
     ? `\nRENTAL CAR: ${plan.rentalCar.type} · HK$${plan.rentalCar.dailyPrice}/day`
     : '';
 
+  const checklistText =
+    checklistItems.length > 0
+      ? Object.entries(
+          checklistItems.reduce((acc: any, item: any) => {
+            if (!acc[item.traveler]) acc[item.traveler] = [];
+            acc[item.traveler].push(item.item);
+            return acc;
+          }, {})
+        )
+          .map(([traveler, items]: any) => `  ${traveler}: ${items.join(', ')}`)
+          .join('\n')
+      : '(No checklist generated yet)';
+
   return `You are the family's travel concierge. You know their trip AND you're a knowledgeable local expert on their destination.
 
 Today: ${today}
@@ -198,15 +211,14 @@ ${Object.entries(budget)
   .map(([k, v]) => `  ${k}: HK$${v}`)
   .join('\n')}
 
+FAMILY PACKING CHECKLIST SUMMARY:
+${checklistText}
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 CRITICAL INSTRUCTIONS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 The itinerary above is a SCHEDULE. It tells you what they have BOOKED. It is NOT the sum total of everything they might want to know.
-
-**THE MOST COMMON MISTAKE TO AVOID:**
-
-When a user asks about something and their itinerary happens to have an activity with a matching keyword, do NOT just describe their booking. Understand what they're actually asking.
 
 **Examples of questions and CORRECT answers:**
 
@@ -226,7 +238,7 @@ When a user asks about something and their itinerary happens to have an activity
    ❌ WRONG: "I don't have weather data in your itinerary."
    ✅ RIGHT: "Late October in Hong Kong is gorgeous — 22-28°C, low humidity, mostly sunny. Pack light layers. ☀️"
 
-**The rule:** Ask yourself, "What does the USER want to know?" Not "What's in the itinerary that matches a keyword?"
+**The rule:** Ask yourself, "What does the USER want to know?"
 
 **When to use the itinerary:**
 - "What's today?" / "What's my schedule?" → use itinerary
@@ -259,24 +271,19 @@ CRITICAL: When you handle such a request, you MUST end your reply with the exact
 EXAMPLES:
 
 User: "Can I cancel my Disney ticket and get a refund?"
-✅ RIGHT: "Of course — I've flagged this to our admin team and they'll reach out to you within 2 hours with refund options for your Disney VIP booking. Is there a specific reason for the cancellation I should pass along?\n\n[CREATE_TICKET]"
-
-User: "Can you book me an extra night at the hotel?"
-✅ RIGHT: "Absolutely — I've passed this to our admin team and they'll contact you within 2 hours to check availability. Do you prefer the same room type?\n\n[CREATE_TICKET]"
+✅ RIGHT: "Of course — I've flagged this to our admin team and they'll reach out to you within 2 hours with refund options. Is there a specific reason for the cancellation I should pass along?\n\n[CREATE_TICKET]"
 
 RULES:
 - Never say "I can't help with that"
 - Never suggest they "contact the vendor directly" — that's OUR job
 - Always reassure with a specific timeframe (2 hours)
 - Always end with [CREATE_TICKET] for these requests
-- Ask ONE clarifying question
 - Do NOT end with [CREATE_TICKET] for normal questions
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 CURRENCY:
-- All prices in the itinerary, budget, and activity data are in HK$ (Hong Kong Dollars).
-- When quoting prices in your replies, use HK$ — never USD or $.
+- All prices are in HK$ (Hong Kong Dollars). Never USD or $.
 
 TONE:
 - Warm and helpful like a savvy local friend.
@@ -519,7 +526,7 @@ export function getBot() {
         `✨ Hi ${firstName}! I'm your personal concierge for your ${trip.destination} trip.\n\n` +
           `Ask me anything:\n` +
           `• "What's my plan for today?"\n` +
-          `• "I'm tired, any lighter options?"\n` +
+          `• "What's on my mom's checklist?"\n` +
           `• "Where should we eat?"\n` +
           `• "What's the weather like?"\n\n` +
           `Or send me a photo 📸 to add to your recap.`
@@ -618,11 +625,115 @@ export function getBot() {
       return;
     }
 
+    // ─── DIRECT CHECKLIST HANDLING (bypass AI) ───
+    const lowerText = text.toLowerCase();
+    const isChecklistQuestion =
+      lowerText.includes('checklist') ||
+      lowerText.includes('packing list') ||
+      lowerText.includes('what should i pack') ||
+      lowerText.includes('what to pack') ||
+      (lowerText.includes('pack') &&
+        (lowerText.includes('mom') ||
+          lowerText.includes('dad') ||
+          lowerText.includes('kid') ||
+          lowerText.includes('grandma') ||
+          lowerText.includes('grandpa')));
+
+    if (isChecklistQuestion) {
+      const { data: checklistData } = await supabase
+        .from('checklists')
+        .select('traveler, item, packed')
+        .eq('trip_id', link.trip_id)
+        .order('traveler');
+
+      if (!checklistData || checklistData.length === 0) {
+        await reply(
+          `You haven't generated a packing list yet. Open your trip → Family Checklist → click "✨ AI-generate checklist" first.`
+        );
+        return;
+      }
+
+      const travelers = Array.from(
+        new Set(checklistData.map((i: any) => i.traveler))
+      ) as string[];
+
+      let targetTraveler: string | null = null;
+
+      // Try direct name match
+      for (const t of travelers) {
+        const tName = t.toLowerCase().split(' ')[0];
+        if (lowerText.includes(tName)) {
+          targetTraveler = t;
+          break;
+        }
+      }
+
+      // Special aliases
+      if (!targetTraveler) {
+        const aliases: Array<[string[], RegExp]> = [
+          [['mom', 'mother'], /mom|mother/i],
+          [['dad', 'father'], /dad|father/i],
+          [['kid', 'child', 'children'], /kid|child/i],
+          [['grandma', 'grandmother'], /grandma|grandmother/i],
+          [['grandpa', 'grandfather'], /grandpa|grandfather/i],
+        ];
+        for (const [keywords, regex] of aliases) {
+          if (keywords.some((k) => lowerText.includes(k))) {
+            const found = travelers.find((t) => regex.test(t));
+            if (found) {
+              targetTraveler = found;
+              break;
+            }
+          }
+        }
+      }
+
+      // Specific traveler
+      if (targetTraveler) {
+        const items = checklistData.filter((i: any) => i.traveler === targetTraveler);
+        const packed = items.filter((i: any) => i.packed).length;
+        const list = items
+          .map((i: any) => `${i.packed ? '✅' : '⬜'} ${i.item}`)
+          .join('\n');
+        await reply(
+          `Here's ${targetTraveler}'s packing list:\n\n${list}\n\nYou've packed ${packed} of ${items.length} items.`
+        );
+        return;
+      }
+
+      // Summary of all travelers
+      const summary = travelers
+        .map((traveler: string) => {
+          const items = checklistData.filter((i: any) => i.traveler === traveler);
+          const packed = items.filter((i: any) => i.packed).length;
+          const list = items
+            .slice(0, 5)
+            .map((i: any) => `  ${i.packed ? '✅' : '⬜'} ${i.item}`)
+            .join('\n');
+          const more =
+            items.length > 5 ? `\n  ...and ${items.length - 5} more` : '';
+          return `👤 ${traveler} (${packed}/${items.length}):\n${list}${more}`;
+        })
+        .join('\n\n');
+
+      await reply(
+        `Here's your family packing checklist:\n\n${summary}\n\nAsk "what's on [name]'s checklist?" for details.`
+      );
+      return;
+    }
+
+    // ─── Everything else → AI ───
     const { data: trip } = await supabase
       .from('trips')
       .select('*')
       .eq('id', link.trip_id)
       .single();
+
+    const { data: checklistItems } = await supabase
+      .from('checklists')
+      .select('traveler, item, packed')
+      .eq('trip_id', link.trip_id)
+      .order('traveler');
 
     if (!trip) {
       await reply(`I lost your trip. Please re-link from the booking page.`);
@@ -634,12 +745,11 @@ export function getBot() {
     } catch {}
 
     try {
-      const systemPrompt = buildSystemPrompt(trip);
+      const systemPrompt = buildSystemPrompt(trip, checklistItems || []);
       const history = getHistory(chatId).slice(-8);
       let response = '';
       let winner: 'gemini' | 'openrouter' | 'local' | null = null;
 
-      // ─── Cancellable AI calls ───
       let cancelled = false;
 
       const geminiCall = (async (): Promise<string | null> => {
@@ -688,7 +798,6 @@ export function getBot() {
         return null;
       });
 
-      // ─── Phase 1: 5s head start for Gemini ───
       try {
         const result = await Promise.race([
           geminiCall,
@@ -733,7 +842,6 @@ export function getBot() {
       cancelled = true;
       console.log(`🏆 Winner: ${winner}`);
 
-      // ─── Support ticket detection ───
       if (response.includes('[CREATE_TICKET]')) {
         const cleanResponse = response.replace(/\[CREATE_TICKET\]/g, '').trim();
 
@@ -770,7 +878,7 @@ export function getBot() {
     }
   });
 
-  console.log('🤖 Telegram bot is running...');
+  console.log(`🤖 Telegram bot is running... [PID: ${process.pid}] [Time: ${new Date().toISOString()}]`);
   startReminderScheduler();
   return bot;
 }
