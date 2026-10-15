@@ -64,3 +64,23 @@ button:disabled {
 .text-xs {
   color: inherit;
 }
+
+/* ─── Force solid text rendering on all browsers ─── */
+html {
+  -webkit-font-smoothing: auto !important;
+  -moz-osx-font-smoothing: auto !important;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  -webkit-font-smoothing: auto !important;
+  -moz-osx-font-smoothing: auto !important;
+}
+
+/* Force all headings to be dark */
+h1, h2, h3, h4, h5, h6 {
+  color: #111827 !important;
+  -webkit-text-fill-color: #111827 !important;
+  opacity: 1 !important;
+  font-weight: 700 !important;
+}
