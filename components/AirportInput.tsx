@@ -99,7 +99,7 @@ export default function AirportInput({ value, onChange, placeholder, disabledCod
         onKeyDown={handleKeyDown}
         placeholder={placeholder || 'Start typing a city...'}
         className={`w-full text-lg font-semibold outline-none bg-transparent ${
-          error ? 'text-red-600' : ''
+          error ? 'text-red-600' : 'text-black'
         }`}
         autoComplete="off"
       />

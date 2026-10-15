@@ -232,7 +232,7 @@ export default function Home() {
                           update('returnDate', next.toISOString().split('T')[0]);
                         }
                       }}
-                      className="w-full text-lg font-semibold outline-none"
+                      className="w-full text-lg font-semibold outline-none text-black"
                     />
                   </div>
                 </div>
@@ -274,46 +274,37 @@ export default function Home() {
                         return d.toISOString().split('T')[0];
                       })()}
                       onChange={(e) => update('returnDate', e.target.value)}
-                      className="w-full text-lg font-semibold outline-none"
+                      className="w-full text-lg font-semibold outline-none text-black"
                     />
                   </div>
                 </div>
               </div>
 
               {/* Travelers */}
-              <div className="mt-5 border-t border-gray-200 pt-4">
-                <label className="block text-xs text-gray-500 mb-2">Travelers</label>
+              <div className="mt-6 border-t border-gray-200 pt-5">
+                <label className="block text-xs text-gray-500 mb-3">Travelers</label>
                 <div className="grid grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">Adults</label>
-                    <input
-                      type="number"
-                      min={1}
-                      value={form.adults}
-                      onChange={(e) => update('adults', Math.max(1, parseInt(e.target.value) || 1))}
-                      className="w-full text-lg font-semibold outline-none border-b border-gray-200 pb-1"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">Seniors (60+)</label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={form.elderly}
-                      onChange={(e) => update('elderly', parseInt(e.target.value) || 0)}
-                      className="w-full text-lg font-semibold outline-none border-b border-gray-200 pb-1"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">Children (2-12)</label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={form.kids}
-                      onChange={(e) => update('kids', parseInt(e.target.value) || 0)}
-                      className="w-full text-lg font-semibold outline-none border-b border-gray-200 pb-1"
-                    />
-                  </div>
+                  <CounterField
+                    label="Adults"
+                    value={form.adults}
+                    onChange={(v) => update('adults', v)}
+                    min={1}
+                    max={10}
+                  />
+                  <CounterField
+                    label="Seniors (60+)"
+                    value={form.elderly}
+                    onChange={(v) => update('elderly', v)}
+                    min={0}
+                    max={10}
+                  />
+                  <CounterField
+                    label="Children (2-12)"
+                    value={form.kids}
+                    onChange={(v) => update('kids', v)}
+                    min={0}
+                    max={10}
+                  />
                 </div>
               </div>
 
@@ -376,7 +367,7 @@ export default function Home() {
                   value={form.notes}
                   onChange={(e) => update('notes', e.target.value)}
                   placeholder="e.g. cultural trip, foodie focus, relaxing pace, kid-friendly..."
-                  className="w-full text-sm outline-none border-b border-gray-200 pb-2 focus:border-green-700"
+                  className="w-full text-sm outline-none border-b border-gray-200 pb-2 focus:border-green-700 text-black"
                 />
                 <p className="text-[11px] text-gray-400 mt-1">
                   Hint: try "cultural", "adventure", "foodie", "relaxing", or "kid-focused"
@@ -536,6 +527,57 @@ export default function Home() {
           <a href="/trips" className="hover:underline">My trips</a>
         </p>
       </footer>
+    </div>
+  );
+}
+
+// ─── Counter component for travelers ───
+function CounterField({
+  label,
+  value,
+  onChange,
+  min = 0,
+  max = 10,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  min?: number;
+  max?: number;
+}) {
+  function decrement() {
+    if (value > min) onChange(value - 1);
+  }
+  function increment() {
+    if (value < max) onChange(value + 1);
+  }
+
+  return (
+    <div>
+      <label className="block text-xs text-gray-500 mb-2">{label}</label>
+      <div className="flex items-center gap-2 border-b border-gray-200 pb-1">
+        <button
+          type="button"
+          onClick={decrement}
+          disabled={value <= min}
+          className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center text-gray-600 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition"
+          aria-label={`Decrease ${label}`}
+        >
+          <span className="text-lg leading-none">−</span>
+        </button>
+        <span className="text-lg font-semibold text-black min-w-[2ch] text-center select-none">
+          {value}
+        </span>
+        <button
+          type="button"
+          onClick={increment}
+          disabled={value >= max}
+          className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center text-gray-600 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition"
+          aria-label={`Increase ${label}`}
+        >
+          <span className="text-lg leading-none">+</span>
+        </button>
+      </div>
     </div>
   );
 }
