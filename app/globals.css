@@ -84,3 +84,66 @@ h1, h2, h3, h4, h5, h6 {
   opacity: 1 !important;
   font-weight: 700 !important;
 }
+
+/* Ensure any unlabeled text is dark by default */
+body {
+  color: #111827;
+}
+
+/* Force text color on common containers */
+.bg-white p:not([class*="text-"]) {
+  color: #111827;
+}
+
+/* Force font-medium text to be dark unless specified */
+.font-medium:not([class*="text-"]) {
+  color: #111827;
+}
+
+/* ─── Mobile contrast fixes (keeps desktop unchanged) ─── */
+
+/* Detect touch/small screens and boost contrast */
+@media (max-width: 768px) {
+  /* Force any gray-ish text to be darker on mobile */
+  .text-gray-300 { color: #4b5563 !important; }
+  .text-gray-400 { color: #4b5563 !important; }
+  .text-gray-500 { color: #374151 !important; }
+  .text-gray-600 { color: #1f2937 !important; }
+
+  /* Force inherited text inside cards to be dark */
+  .bg-white p,
+  .bg-white span,
+  .bg-white div:not([class*="bg-"]):not([class*="text-"]) {
+    color: #111827;
+  }
+
+  /* Fix the specific booking confirmation page text */
+  .font-medium:not([class*="text-"]) {
+    color: #111827 !important;
+  }
+
+  /* Boost pale badges */
+  .bg-green-100 { 
+    background-color: #0d4d3d !important; 
+    color: #ffffff !important; 
+  }
+  .bg-yellow-100 { 
+    background-color: #d97706 !important; 
+    color: #ffffff !important; 
+  }
+
+  /* Darker borders on buttons */
+  .border-gray-300 { border-color: #9ca3af !important; }
+
+  /* Ensure inputs are black */
+  input, textarea, select {
+    color: #000000 !important;
+    -webkit-text-fill-color: #000000 !important;
+  }
+
+  /* Force headings black (mobile Safari quirk) */
+  h1, h2, h3, h4, h5, h6 {
+    color: #000000 !important;
+    -webkit-text-fill-color: #000000 !important;
+  }
+}
