@@ -271,7 +271,7 @@ export default function BookPage() {
                 </p>
                 {b.details?.cost_usd ? (
                   <p className="text-xs text-gray-500 mt-0.5">
-                    ${b.details.cost_usd}
+                    HK${b.details.cost_usd}
                     <span className="text-amber-700 font-medium ml-2">
                       ✨ {Math.floor(b.details.cost_usd / 15)} miles
                     </span>

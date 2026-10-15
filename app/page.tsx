@@ -18,7 +18,7 @@ export default function Home() {
     adults: 1,
     kids: 0,
     elderly: 0,
-    budget: 5000,
+    budget: 50000,
     transport: 'mix' as 'public' | 'rental' | 'mix',
     notes: '',
   });
@@ -341,13 +341,13 @@ export default function Home() {
                   </label>
                   <div className="flex items-center gap-3">
                     <span className="text-lg font-semibold whitespace-nowrap">
-                      ${form.budget.toLocaleString('en-US')}
+                      HK${form.budget.toLocaleString('en-US')}
                     </span>
                     <input
                       type="range"
-                      min={1000}
-                      max={100000}
-                      step={1000}
+                      min={5000}
+                      max={500000}
+                      step={5000}
                       value={form.budget}
                       onChange={(e) => update('budget', parseInt(e.target.value))}
                       className="flex-1"

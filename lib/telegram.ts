@@ -59,7 +59,7 @@ function buildSystemPrompt(trip: any): string {
     .join(', ') || 'Family';
 
   const rentalCar = plan.rentalCar?.recommended
-    ? `\nRENTAL CAR: ${plan.rentalCar.type} · $${plan.rentalCar.dailyPrice}/day`
+    ? `\nRENTAL CAR: ${plan.rentalCar.type} · HK$${plan.rentalCar.dailyPrice}/day`
     : '';
 
   return `You are the family's travel concierge. You know their trip AND you're a knowledgeable local expert on their destination.
@@ -75,7 +75,7 @@ ${itineraryText || '(No activities planned yet)'}
 
 BUDGET BREAKDOWN:
 ${Object.entries(budget)
-  .map(([k, v]) => `  ${k}: $${v}`)
+  .map(([k, v]) => `  ${k}: HK$${v}`)
   .join('\n')}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -162,6 +162,11 @@ RULES:
 TONE: reassuring, warm, competent. Like a hotel concierge who handles things behind the scenes.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+CURRENCY:
+- All prices in the itinerary, budget, and activity data are in HK$ (Hong Kong Dollars).
+- When quoting prices in your replies, use HK$ — never USD or $.
+- If the user asks about money, answer in HK$.
 
 TONE:
 - Warm and helpful like a savvy local friend.

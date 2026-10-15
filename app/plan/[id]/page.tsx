@@ -417,7 +417,7 @@ export default function TripPage() {
             </div>
             <div className="text-right">
               <p className="text-xs text-gray-500">Budget</p>
-              <p className="text-2xl font-bold">${budget.toLocaleString('en-US')}</p>
+              <p className="text-2xl font-bold">HK${budget.toLocaleString('en-US')}</p>
             </div>
           </div>
 
@@ -430,9 +430,9 @@ export default function TripPage() {
                 </p>
                 <p className="text-sm text-gray-600">
                   <span className="font-semibold" style={{ color: isOverBudget ? '#dc2626' : '#0d4d3d' }}>
-                    ${totalSpent.toLocaleString('en-US')}
+                    HK${totalSpent.toLocaleString('en-US')}
                   </span>
-                  {' '}spent of ${budget.toLocaleString('en-US')}
+                  {' '}spent of HK${budget.toLocaleString('en-US')}
                 </p>
                 <p className="text-[11px] text-gray-500 mt-1">
                   ✈️ Flights ${effectiveFlightCost.toLocaleString('en-US')} · 🏨 Hotels ${accommodation.toLocaleString('en-US')} · 🚗 Car ${rentalCarTotal.toLocaleString('en-US')} · 🎫 Activities ${activitiesSpent.toLocaleString('en-US')}
@@ -446,7 +446,7 @@ export default function TripPage() {
                   className="text-lg font-bold"
                   style={{ color: isOverBudget ? '#dc2626' : '#0d4d3d' }}
                 >
-                  ${Math.abs(remaining).toLocaleString('en-US')}
+                  HK${Math.abs(remaining).toLocaleString('en-US')}
                 </p>
                 <p className="text-xs font-medium text-amber-700 mt-0.5">
                   ✨ {totalMilesEarned.toLocaleString('en-US')} miles
@@ -467,7 +467,7 @@ export default function TripPage() {
 
             {isOverBudget && (
               <p className="text-xs text-red-600 mt-2 font-medium">
-                ⚠️ You're ${Math.abs(remaining).toLocaleString('en-US')} over budget. Remove or reduce some activities.
+                ⚠️ You're HK${Math.abs(remaining).toLocaleString('en-US')} over budget. Remove or reduce some activities.
               </p>
             )}
           </div>          
@@ -484,7 +484,7 @@ export default function TripPage() {
                   <span>{b.icon}</span>
                   <span className="text-xs text-gray-500">{b.label}</span>
                 </div>
-                <p className="font-semibold">${(b.value || 0).toLocaleString('en-US')}</p>
+                <p className="font-semibold">HK${(b.value || 0).toLocaleString('en-US')}</p>
               </div>
             ))}
           </div>
@@ -532,7 +532,7 @@ export default function TripPage() {
               <div className="text-right">
                 <p className="text-xs text-gray-500">Round-trip · {plan.travelers?.length || 1} travelers</p>
                 <p className="text-2xl font-bold" style={{ color: '#0d4d3d' }}>
-                  ${flightTotal.toLocaleString('en-US')}
+                  HK${flightTotal.toLocaleString('en-US')}
                 </p>
                 <p className="text-xs font-medium text-amber-700 mt-0.5">
                   ✨ Earn {milesEarned.toLocaleString('en-US')} miles
@@ -588,7 +588,7 @@ export default function TripPage() {
                     >
                       <p className="text-xs font-bold mb-1">{cabin.label}</p>
                       <p className="text-sm font-semibold mb-0.5">
-                        ${cabinPrice.toLocaleString('en-US')}
+                        HK${cabinPrice.toLocaleString('en-US')}
                       </p>
                       <p className="text-[10px] text-amber-700 font-medium mb-1">
                         ✨ {cabinMiles} miles
@@ -612,8 +612,8 @@ export default function TripPage() {
               </div>
               <div className="text-right">
                 <p className="text-xs text-gray-500">Total ({car.days} days)</p>
-                <p className="text-2xl font-bold">${car.totalPrice}</p>
-                <p className="text-xs text-gray-500">${car.dailyPrice}/day</p>
+                <p className="text-2xl font-bold">HK${car.totalPrice}</p>
+                <p className="text-xs text-gray-500">HK${car.dailyPrice}/day</p>
               </div>
             </div>
             <div className="grid md:grid-cols-2 gap-4 text-sm mb-4">
@@ -716,12 +716,12 @@ export default function TripPage() {
                         )}
                         {t?.car?.available && (
                           <span className="text-[10px] bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded">
-                            🚗 {t.car.duration} · ${t.car.cost}
+                            🚗 {t.car.duration} · HK${t.car.cost}
                           </span>
                         )}
                         {t?.public?.available && (
                           <span className="text-[10px] bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded">
-                            🚇 {t.public.duration} · ${t.public.cost}
+                            🚇 {t.public.duration} · HK${t.public.cost}
                           </span>
                         )}
                       </div>
@@ -730,7 +730,7 @@ export default function TripPage() {
                       )}
                     </div>
                     <div className="text-right whitespace-nowrap">
-                      <p className="text-sm font-semibold">${a.cost_usd || 0}</p>
+                      <p className="text-sm font-semibold">HK${a.cost_usd || 0}</p>
                       <p className="text-gray-400 text-xs">View →</p>
                     </div>
                   </div>
@@ -1084,7 +1084,7 @@ function ActivityModal({
                 >
                   <div className="flex justify-between items-center mb-1">
                     <span className="font-semibold text-sm">🚗 By car</span>
-                    <span className="font-bold">${t.car.cost}</span>
+                    <span className="font-bold">HK${t.car.cost}</span>
                   </div>
                   <p className="text-xs text-gray-600 mb-1">
                     ⏱ {t.car.duration} · 📏 {t.car.distance}
@@ -1103,7 +1103,7 @@ function ActivityModal({
                 >
                   <div className="flex justify-between items-center mb-1">
                     <span className="font-semibold text-sm">🚇 Public</span>
-                    <span className="font-bold">${t.public.cost}</span>
+                    <span className="font-bold">HK${t.public.cost}</span>
                   </div>
                   <p className="text-xs text-gray-600 mb-1">⏱ {t.public.duration}</p>
                   <p className="text-xs text-gray-600 mb-1">{t.public.details}</p>
@@ -1133,7 +1133,7 @@ function ActivityModal({
               </div>
               <div className="flex justify-between py-1 border-b border-gray-100">
                 <span className="text-gray-500">Cost</span>
-                <span className="font-medium">${a.cost_usd || 0}</span>
+                <span className="font-medium">HK${a.cost_usd || 0}</span>
               </div>
               {(a.cost_usd || 0) > 0 && (
                 <div className="flex justify-between py-1 border-b border-gray-100">

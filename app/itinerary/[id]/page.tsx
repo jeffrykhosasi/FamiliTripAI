@@ -251,7 +251,7 @@ export default function ItineraryPage() {
                         )}
                       </div>
                       <div className="text-right whitespace-nowrap">
-                        <p className="text-sm font-semibold">${a.cost_usd || 0}</p>
+                        <p className="text-sm font-semibold">HK${a.cost_usd || 0}</p>
                         <p className="text-gray-400 text-xs">
                           {isExpanded ? '▲' : '▼'}
                         </p>

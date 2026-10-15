@@ -33,9 +33,10 @@ START DATE: ${form.startDate}
 RETURN DATE: ${form.returnDate}
 DURATION: ${form.days} days
 TRAVELERS: ${form.adults} adults, ${form.kids} children (2-12), ${form.elderly} seniors (60+)
-TOTAL BUDGET: $${form.budget} USD
+TOTAL BUDGET: HK$${form.budget} HKD
 TRANSPORT: ${transportText}${notesText}
 
+IMPORTANT: All prices (activities, hotels, transport, rental car) MUST be in HK$ (Hong Kong Dollars), not USD. A typical family trip to Japan costs HK$20,000-50,000 total.
 
 IMPORTANT SEQUENCING:
 1. First, decide the flight itinerary (departure time, arrival time, duration).
