@@ -3,30 +3,28 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 
-// Group travelers into role-based categories
-const ROLE_GROUPS: Record<string, { label: string; subtitle: string; emoji: string }> = {
-  seniors: {
-    label: 'Grandparents',
-    subtitle: 'Active & Health-Focused',
-    emoji: '👴👵',
-  },
-  adults: {
-    label: 'Parents',
-    subtitle: 'Logistics & Coordination',
-    emoji: '👨👩',
-  },
-  kids: {
-    label: 'Children',
-    subtitle: 'Kids Activity & Comfort',
-    emoji: '👦👧',
-  },
-};
-
-function classifyTraveler(name: string): 'seniors' | 'adults' | 'kids' {
-  const n = name.toLowerCase();
-  if (n.includes('grandma') || n.includes('grandpa') || n.includes('senior')) return 'seniors';
-  if (n.includes('kid') || n.includes('child')) return 'kids';
-  return 'adults';
+// Determine emoji + subtitle from traveler name
+function getTravelerMeta(name: string): { emoji: string; subtitle: string } {
+  const n = (name || '').toLowerCase();
+  if (n.includes('grandma') || n.includes('grandmother')) {
+    return { emoji: '👵', subtitle: 'Comfort & Health' };
+  }
+  if (n.includes('grandpa') || n.includes('grandfather')) {
+    return { emoji: '👴', subtitle: 'Comfort & Mobility' };
+  }
+  if (n.includes('mom') || n.includes('mother')) {
+    return { emoji: '👩', subtitle: 'Logistics & Coordination' };
+  }
+  if (n.includes('dad') || n.includes('father')) {
+    return { emoji: '👨', subtitle: 'Logistics & Coordination' };
+  }
+  if (n.includes('kid') || n.includes('child')) {
+    return { emoji: '🧒', subtitle: 'Kids Activity & Comfort' };
+  }
+  if (n.includes('senior')) {
+    return { emoji: '👴', subtitle: 'Comfort & Health' };
+  }
+  return { emoji: '👤', subtitle: 'Traveler' };
 }
 
 export default function ChecklistPage() {
@@ -103,15 +101,14 @@ export default function ChecklistPage() {
     await fetch(`/api/checklist?id=${id}`, { method: 'DELETE' });
   }
 
-  async function addItemToGroup(travelers: string[]) {
+  async function addItemToTraveler(traveler: string) {
     if (!newItemText.trim()) return;
-    // Assign to the first traveler in this group
     await fetch('/api/checklist', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         tripId,
-        items: { [travelers[0]]: [newItemText.trim()] },
+        items: { [traveler]: [newItemText.trim()] },
       }),
     });
     setNewItemText('');
@@ -119,19 +116,11 @@ export default function ChecklistPage() {
     load();
   }
 
-  // Group items by role
-  const grouped: Record<string, { travelers: string[]; items: any[] }> = {
-    seniors: { travelers: [], items: [] },
-    adults: { travelers: [], items: [] },
-    kids: { travelers: [], items: [] },
-  };
-
+  // Group items by INDIVIDUAL traveler (not by role)
+  const grouped: Record<string, any[]> = {};
   items.forEach((item) => {
-    const group = classifyTraveler(item.traveler);
-    grouped[group].items.push(item);
-    if (!grouped[group].travelers.includes(item.traveler)) {
-      grouped[group].travelers.push(item.traveler);
-    }
+    if (!grouped[item.traveler]) grouped[item.traveler] = [];
+    grouped[item.traveler].push(item);
   });
 
   const total = items.length;
@@ -139,11 +128,13 @@ export default function ChecklistPage() {
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
 
   function shareWhatsApp() {
-    const lines = [`🗂 *${trip?.plan?.destination || 'Trip'} — Packing Checklist*\n`];
-    Object.entries(grouped).forEach(([key, group]) => {
-      if (group.items.length === 0) return;
-      lines.push(`\n${ROLE_GROUPS[key].emoji} *${ROLE_GROUPS[key].label}*`);
-      group.items.forEach((i) => {
+    const lines = [
+      `🗂 *${trip?.plan?.destination || 'Trip'} — Packing Checklist*\n`,
+    ];
+    Object.entries(grouped).forEach(([traveler, travelerItems]) => {
+      if (travelerItems.length === 0) return;
+      lines.push(`\n*${traveler}*`);
+      travelerItems.forEach((i: any) => {
         lines.push(`${i.packed ? '✅' : '⬜'} ${i.item}`);
       });
     });
@@ -153,11 +144,13 @@ export default function ChecklistPage() {
   }
 
   function shareTelegram() {
-    const lines = [`🗂 ${trip?.plan?.destination || 'Trip'} — Packing Checklist\n`];
-    Object.entries(grouped).forEach(([key, group]) => {
-      if (group.items.length === 0) return;
-      lines.push(`\n${ROLE_GROUPS[key].emoji} ${ROLE_GROUPS[key].label}`);
-      group.items.forEach((i) => {
+    const lines = [
+      `🗂 ${trip?.plan?.destination || 'Trip'} — Packing Checklist\n`,
+    ];
+    Object.entries(grouped).forEach(([traveler, travelerItems]) => {
+      if (travelerItems.length === 0) return;
+      lines.push(`\n${traveler}`);
+      travelerItems.forEach((i: any) => {
         lines.push(`${i.packed ? '✅' : '⬜'} ${i.item}`);
       });
     });
@@ -174,48 +167,11 @@ export default function ChecklistPage() {
             <div className="h-8 w-24 bg-gray-200 rounded animate-pulse" />
           </div>
         </nav>
-
         <div className="max-w-6xl mx-auto p-8">
           <div className="bg-white rounded-2xl shadow-sm p-8 mb-6 animate-pulse">
             <div className="h-8 w-72 bg-gray-200 rounded mb-3" />
             <div className="h-4 w-96 bg-gray-200 rounded mb-6" />
             <div className="h-3 bg-gray-200 rounded-full" />
-          </div>
-
-          <div className="grid lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2 space-y-4">
-              {[1, 2, 3].map((i) => (
-                <div
-                  key={i}
-                  className="bg-white rounded-2xl shadow-sm p-6 animate-pulse"
-                  style={{ animationDelay: `${i * 100}ms` }}
-                >
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="h-10 w-10 bg-gray-200 rounded-full" />
-                    <div>
-                      <div className="h-5 w-32 bg-gray-200 rounded mb-2" />
-                      <div className="h-3 w-40 bg-gray-200 rounded" />
-                    </div>
-                  </div>
-                  {[1, 2, 3, 4].map((item) => (
-                    <div key={item} className="flex items-center gap-3 py-2">
-                      <div className="h-4 w-4 bg-gray-200 rounded" />
-                      <div className="h-3 flex-1 bg-gray-200 rounded" />
-                    </div>
-                  ))}
-                </div>
-              ))}
-            </div>
-
-            <div className="space-y-4">
-              {[1, 2].map((i) => (
-                <div
-                  key={i}
-                  className="bg-white rounded-2xl shadow-sm p-6 h-32 animate-pulse"
-                  style={{ animationDelay: `${i * 100}ms` }}
-                />
-              ))}
-            </div>
           </div>
         </div>
       </div>
@@ -263,13 +219,12 @@ export default function ChecklistPage() {
                 Your Smart Family Packing Checklist
               </h1>
               <p className="text-gray-500 text-sm">
-                Tailored for {trip?.plan?.destination || 'your trip'} — based on your activities and traveler needs.
+                Tailored for {trip?.plan?.destination || 'your trip'} — based on your
+                activities and traveler needs.
               </p>
             </div>
             <div className="text-right whitespace-nowrap ml-4">
-              <p className="text-sm font-semibold">
-                {pct}% Packed
-              </p>
+              <p className="text-sm font-semibold">{pct}% Packed</p>
               <p className="text-xs text-gray-500">
                 {done}/{total} items
               </p>
@@ -335,121 +290,118 @@ export default function ChecklistPage() {
             >
               {generating ? '✨ Generating your list...' : '✨ Generate my packing list'}
             </button>
-            <p className="text-xs text-gray-400 mt-4">
-              Takes about 10 seconds
-            </p>
+            <p className="text-xs text-gray-400 mt-4">Takes about 10 seconds</p>
           </div>
         )}
 
         {/* Main content: checklist + side panel */}
         {items.length > 0 && (
           <div className="grid lg:grid-cols-3 gap-6">
-            {/* Left: 3 role cards */}
+            {/* Left: per-traveler cards */}
             <div className="lg:col-span-2 space-y-4">
-              {Object.entries(grouped).map(([key, group]) => {
-                if (group.items.length === 0) return null;
-                const role = ROLE_GROUPS[key];
-                const groupDone = group.items.filter((i) => i.packed).length;
-                const isAdding = openAddFor === key;
+              {Object.entries(grouped).map(
+                ([traveler, travelerItems]: [string, any]) => {
+                  if (travelerItems.length === 0) return null;
+                  const meta = getTravelerMeta(traveler);
+                  const groupDone = travelerItems.filter((i: any) => i.packed).length;
+                  const isAdding = openAddFor === traveler;
 
-                return (
-                  <div
-                    key={key}
-                    className="bg-white rounded-2xl shadow-sm overflow-hidden"
-                  >
-                    <div className="p-5 border-b border-gray-100">
-                      <div className="flex justify-between items-center">
-                        <div className="flex items-center gap-3">
-                          <span className="text-3xl">{role.emoji}</span>
-                          <div>
-                            <h2 className="font-bold text-lg">{role.label}</h2>
-                            <p className="text-xs text-gray-500">
-                              {role.subtitle}
-                            </p>
+                  return (
+                    <div
+                      key={traveler}
+                      className="bg-white rounded-2xl shadow-sm overflow-hidden"
+                    >
+                      <div className="p-5 border-b border-gray-100">
+                        <div className="flex justify-between items-center">
+                          <div className="flex items-center gap-3">
+                            <span className="text-3xl">{meta.emoji}</span>
+                            <div>
+                              <h2 className="font-bold text-lg">{traveler}</h2>
+                              <p className="text-xs text-gray-500">{meta.subtitle}</p>
+                            </div>
                           </div>
+                          <span className="text-sm text-gray-500">
+                            {groupDone}/{travelerItems.length}
+                          </span>
                         </div>
-                        <span className="text-sm text-gray-500">
-                          {groupDone}/{group.items.length}
-                        </span>
+                      </div>
+
+                      <div className="p-3">
+                        {travelerItems.map((item: any) => (
+                          <div
+                            key={item.id}
+                            className="flex items-start gap-3 py-2 px-2 rounded-lg hover:bg-gray-50 group"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={item.packed}
+                              onChange={(e) => toggle(item.id, e.target.checked)}
+                              className="mt-0.5 w-4 h-4 cursor-pointer flex-shrink-0"
+                              style={{ accentColor: '#0d4d3d' }}
+                            />
+                            <span
+                              className={`flex-1 text-sm ${
+                                item.packed
+                                  ? 'line-through text-gray-400'
+                                  : 'text-gray-800'
+                              }`}
+                            >
+                              {item.item}
+                            </span>
+                            <button
+                              onClick={() => remove(item.id)}
+                              className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 text-xs transition"
+                              title="Remove"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="px-3 pb-3">
+                        {isAdding ? (
+                          <div className="flex gap-2">
+                            <input
+                              value={newItemText}
+                              onChange={(e) => setNewItemText(e.target.value)}
+                              onKeyDown={(e) =>
+                                e.key === 'Enter' && addItemToTraveler(traveler)
+                              }
+                              placeholder="e.g. Toothbrush"
+                              className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-green-700"
+                              autoFocus
+                            />
+                            <button
+                              onClick={() => addItemToTraveler(traveler)}
+                              className="text-white px-4 py-2 rounded-lg text-sm font-medium"
+                              style={{ backgroundColor: '#0d4d3d' }}
+                            >
+                              Add
+                            </button>
+                            <button
+                              onClick={() => {
+                                setOpenAddFor(null);
+                                setNewItemText('');
+                              }}
+                              className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setOpenAddFor(traveler)}
+                            className="w-full py-2 rounded-lg border-2 border-dashed border-gray-300 text-sm text-gray-600 hover:border-green-700 hover:text-green-800 transition"
+                          >
+                            + Add item
+                          </button>
+                        )}
                       </div>
                     </div>
-
-                    <div className="p-3">
-                      {group.items.map((item) => (
-                        <div
-                          key={item.id}
-                          className="flex items-start gap-3 py-2 px-2 rounded-lg hover:bg-gray-50 group"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={item.packed}
-                            onChange={(e) => toggle(item.id, e.target.checked)}
-                            className="mt-0.5 w-4 h-4 cursor-pointer flex-shrink-0"
-                            style={{ accentColor: '#0d4d3d' }}
-                          />
-                          <span
-                            className={`flex-1 text-sm ${
-                              item.packed
-                                ? 'line-through text-gray-400'
-                                : 'text-gray-800'
-                            }`}
-                          >
-                            {item.item}
-                          </span>
-                          <button
-                            onClick={() => remove(item.id)}
-                            className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 text-xs transition"
-                            title="Remove"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="px-3 pb-3">
-                      {isAdding ? (
-                        <div className="flex gap-2">
-                          <input
-                            value={newItemText}
-                            onChange={(e) => setNewItemText(e.target.value)}
-                            onKeyDown={(e) =>
-                              e.key === 'Enter' &&
-                              addItemToGroup(group.travelers)
-                            }
-                            placeholder="e.g. Toothbrush"
-                            className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-green-700"
-                            autoFocus
-                          />
-                          <button
-                            onClick={() => addItemToGroup(group.travelers)}
-                            className="text-white px-4 py-2 rounded-lg text-sm font-medium"
-                            style={{ backgroundColor: '#0d4d3d' }}
-                          >
-                            Add
-                          </button>
-                          <button
-                            onClick={() => {
-                              setOpenAddFor(null);
-                              setNewItemText('');
-                            }}
-                            className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => setOpenAddFor(key)}
-                          className="w-full py-2 rounded-lg border-2 border-dashed border-gray-300 text-sm text-gray-600 hover:border-green-700 hover:text-green-800 transition"
-                        >
-                          + Add item
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                }
+              )}
             </div>
 
             {/* Right: side panel */}
@@ -481,7 +433,8 @@ export default function ChecklistPage() {
                   🤖 AI Companion reminds you
                 </p>
                 <p className="text-sm text-gray-600 mb-4">
-                  Your trip assistant will send reminders and packing nudges before departure.
+                  Your trip assistant will send reminders and packing nudges before
+                  departure.
                 </p>
 
                 <a
@@ -495,15 +448,15 @@ export default function ChecklistPage() {
                 </a>
               </div>
 
-              {/* Weather hint (optional) */}
+              {/* Weather hint */}
               {trip?.plan?.destination && (
                 <div className="bg-blue-50 rounded-2xl p-5">
                   <p className="text-xs font-semibold text-blue-800 uppercase tracking-wider mb-1">
                     🌦️ Weather-Aware
                   </p>
                   <p className="text-xs text-blue-900">
-                    Checklist adapts to the forecast for {trip.plan.destination}.
-                    Rain expected? Umbrellas already added.
+                    Checklist adapts to the forecast for {trip.plan.destination}. Rain
+                    expected? Umbrellas already added.
                   </p>
                 </div>
               )}

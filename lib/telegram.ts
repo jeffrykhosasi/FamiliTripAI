@@ -182,19 +182,6 @@ function buildSystemPrompt(trip: any, checklistItems: any[] = []): string {
     ? `\nRENTAL CAR: ${plan.rentalCar.type} · HK$${plan.rentalCar.dailyPrice}/day`
     : '';
 
-  const checklistText =
-    checklistItems.length > 0
-      ? Object.entries(
-          checklistItems.reduce((acc: any, item: any) => {
-            if (!acc[item.traveler]) acc[item.traveler] = [];
-            acc[item.traveler].push(item.item);
-            return acc;
-          }, {})
-        )
-          .map(([traveler, items]: any) => `  ${traveler}: ${items.join(', ')}`)
-          .join('\n')
-      : '(No checklist generated yet)';
-
   return `You are the family's travel concierge. You know their trip AND you're a knowledgeable local expert on their destination.
 
 Today: ${today}
@@ -210,9 +197,6 @@ BUDGET BREAKDOWN:
 ${Object.entries(budget)
   .map(([k, v]) => `  ${k}: HK$${v}`)
   .join('\n')}
-
-FAMILY PACKING CHECKLIST SUMMARY:
-${checklistText}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 CRITICAL INSTRUCTIONS
@@ -250,9 +234,6 @@ The itinerary above is a SCHEDULE. It tells you what they have BOOKED. It is NOT
 - "What's popular/famous/must-see?" → local knowledge
 - "Is it safe?" / "Is it worth it?" / "Should I?" → local knowledge
 - "What's the weather?" → general knowledge
-
-**Combining both is best:**
-If the answer connects to their itinerary, mention it: "You're already going to X — great choice! Also try Y nearby."
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 HANDLING REQUESTS BEYOND YOUR CAPABILITY
@@ -637,14 +618,23 @@ export function getBot() {
           lowerText.includes('dad') ||
           lowerText.includes('kid') ||
           lowerText.includes('grandma') ||
-          lowerText.includes('grandpa')));
+          lowerText.includes('grandpa') ||
+          lowerText.includes('grandmom') ||
+          lowerText.includes('granddad')));
 
     if (isChecklistQuestion) {
-      const { data: checklistData } = await supabase
+      console.log('✅ CHECKLIST HANDLER TRIGGERED for:', text);
+
+      const { data: checklistData, error: checklistError } = await supabase
         .from('checklists')
         .select('traveler, item, packed')
         .eq('trip_id', link.trip_id)
         .order('traveler');
+
+      console.log('📋 Checklist query result:', {
+        count: checklistData?.length,
+        error: checklistError?.message,
+      });
 
       if (!checklistData || checklistData.length === 0) {
         await reply(
@@ -659,23 +649,36 @@ export function getBot() {
 
       let targetTraveler: string | null = null;
 
-      // Try direct name match
-      for (const t of travelers) {
+      // Match travelers by name — check LONGEST names first to avoid "grandmom" matching "mom"
+      const sortedTravelers = [...travelers].sort(
+        (a, b) => b.length - a.length
+      );
+      for (const t of sortedTravelers) {
         const tName = t.toLowerCase().split(' ')[0];
-        if (lowerText.includes(tName)) {
+        const wordBoundary = new RegExp(`\\b${tName}\\b`, 'i');
+        if (wordBoundary.test(lowerText)) {
           targetTraveler = t;
           break;
         }
       }
 
-      // Special aliases
+      // Special aliases (grandparents FIRST because they may contain "mom"/"dad")
       if (!targetTraveler) {
         const aliases: Array<[string[], RegExp]> = [
-          [['mom', 'mother'], /mom|mother/i],
+          [
+            ['grandmom', 'grand mom', 'grandma', 'grandmother'],
+            /grandma|grandmother|grandmom|grand\s*mom/i,
+          ],
+          [
+            ['granddad', 'grand dad', 'grandad', 'grandpa', 'grandfather'],
+            /grandpa|grandfather|granddad|grand\s*dad|grandad/i,
+          ],
+          [
+            ['kid', 'child', 'children', 'son', 'daughter'],
+            /kid|child|son|daughter/i,
+          ],
+          [['mom', 'mother', 'mum'], /mom|mother|mum/i],
           [['dad', 'father'], /dad|father/i],
-          [['kid', 'child', 'children'], /kid|child/i],
-          [['grandma', 'grandmother'], /grandma|grandmother/i],
-          [['grandpa', 'grandfather'], /grandpa|grandfather/i],
         ];
         for (const [keywords, regex] of aliases) {
           if (keywords.some((k) => lowerText.includes(k))) {
@@ -688,9 +691,13 @@ export function getBot() {
         }
       }
 
+      console.log(`🎯 Matched traveler: ${targetTraveler || '(summary)'}`);
+
       // Specific traveler
       if (targetTraveler) {
-        const items = checklistData.filter((i: any) => i.traveler === targetTraveler);
+        const items = checklistData.filter(
+          (i: any) => i.traveler === targetTraveler
+        );
         const packed = items.filter((i: any) => i.packed).length;
         const list = items
           .map((i: any) => `${i.packed ? '✅' : '⬜'} ${i.item}`)
@@ -704,7 +711,9 @@ export function getBot() {
       // Summary of all travelers
       const summary = travelers
         .map((traveler: string) => {
-          const items = checklistData.filter((i: any) => i.traveler === traveler);
+          const items = checklistData.filter(
+            (i: any) => i.traveler === traveler
+          );
           const packed = items.filter((i: any) => i.packed).length;
           const list = items
             .slice(0, 5)
@@ -878,7 +887,7 @@ export function getBot() {
     }
   });
 
-  console.log(`🤖 Telegram bot is running... [PID: ${process.pid}] [Time: ${new Date().toISOString()}]`);
+  console.log('🤖 Telegram bot is running...');
   startReminderScheduler();
   return bot;
 }
