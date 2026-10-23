@@ -608,7 +608,7 @@ export default function TripPage() {
             <div className="flex justify-between items-start mb-4">
               <div>
                 <p className="text-xs font-semibold text-green-800 mb-1">🚗 RENTAL CAR</p>
-                <h2 className="text-xl font-bold">{car.type}</h2>
+                <h2 className="text-xl font-bold">{car.type && car.type !== 'None' ? car.type : '7-seat minivan'}</h2>
               </div>
               <div className="text-right">
                 <p className="text-xs text-gray-500">Total ({car.days} days)</p>
@@ -619,7 +619,7 @@ export default function TripPage() {
             <div className="grid md:grid-cols-2 gap-4 text-sm mb-4">
               <div className="bg-gray-50 rounded-lg p-3">
                 <p className="text-xs text-gray-500 mb-1">Pickup</p>
-                <p>{car.pickupLocation}</p>
+                <p>{car.pickupLocation && car.pickupLocation !== 'N/A' ? car.pickupLocation : `${plan.destination?.split(',')[0] || 'Airport'} Airport`}</p>
               </div>
               <div className="bg-gray-50 rounded-lg p-3">
                 <p className="text-xs text-gray-500 mb-1">Drop-off</p>

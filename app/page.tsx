@@ -52,7 +52,8 @@ export default function Home() {
     form.leavingFrom !== form.destination &&
     form.startDate &&
     form.returnDate &&
-    form.returnDate > form.startDate;
+    form.returnDate > form.startDate &&
+    (form.adults + form.kids + form.elderly) >= 1;
 
   async function handleGenerate() {
     // Validate cities
@@ -69,6 +70,10 @@ export default function Home() {
     }
     if (form.leavingFrom === form.destination) {
       setError('Departure and destination cannot be the same airport.');
+      return;
+    }
+    if ((form.adults + form.kids + form.elderly) < 1) {
+      setError('Please add at least one traveler.');
       return;
     }
 
@@ -296,7 +301,7 @@ export default function Home() {
                     label="Adults"
                     value={form.adults}
                     onChange={(v) => update('adults', v)}
-                    min={1}
+                    min={0}
                     max={10}
                   />
                   <CounterField
