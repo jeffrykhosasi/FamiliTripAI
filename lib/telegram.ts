@@ -46,57 +46,72 @@ async function checkAndSendReminders() {
   if (!links || links.length === 0) return;
 
   const now = new Date();
+  now.setHours(0, 0, 0, 0); // Start of today
 
   for (const link of links) {
+    // 1. Get trip
     const { data: trip } = await supabase
       .from('trips')
       .select('*')
       .eq('id', link.trip_id)
       .single();
 
-    if (!trip?.plan) continue;
+    if (!trip?.plan || !trip.plan.startDate) continue;
 
-    const plan = trip.plan;
-    const days = plan.dailyPlans || plan.days || [];
-    if (!plan.startDate) continue;
-
-    const tripStart = new Date(plan.startDate);
+    // 2. Calculate days until trip
+    const tripStart = new Date(trip.plan.startDate);
     tripStart.setHours(0, 0, 0, 0);
+    
+    const diffTime = tripStart.getTime() - now.getTime();
+    const daysUntil = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-    const todayStart = new Date(now);
-    todayStart.setHours(0, 0, 0, 0);
+    // 3. Check if trip is exactly 3 days away
+    const reminderKey = `${link.trip_id}-packing-3days`;
+    if (daysUntil === 3 && !sentReminders.has(reminderKey)) {
+      
+      // 4. Get checklist to calculate progress
+      const { data: checklistItems } = await supabase
+        .from('checklists')
+        .select('packed')
+        .eq('trip_id', link.trip_id);
 
-    const currentDayNum =
-      Math.floor((todayStart.getTime() - tripStart.getTime()) / 86400000) + 1;
+      if (checklistItems && checklistItems.length > 0) {
+        const total = checklistItems.length;
+        const packed = checklistItems.filter((i: any) => i.packed).length;
+        const pct = Math.round((packed / total) * 100);
 
-    const currentDay = days.find((d: any) => d.day === currentDayNum);
-    if (!currentDay) continue;
-
-    for (let i = 0; i < (currentDay.activities || []).length; i++) {
-      const activity = currentDay.activities[i];
-      const timeMatch = (activity.time || '').match(/(\d{1,2}):(\d{2})/);
-      if (!timeMatch) continue;
-
-      const actTime = new Date(todayStart);
-      actTime.setHours(parseInt(timeMatch[1]), parseInt(timeMatch[2]), 0, 0);
-
-      const diffMinutes = (actTime.getTime() - now.getTime()) / 60000;
-
-      const reminderKey = `${link.trip_id}-${currentDayNum}-${i}`;
-      if (
-        diffMinutes >= 28 &&
-        diffMinutes <= 32 &&
-        !sentReminders.has(reminderKey)
-      ) {
-        sentReminders.add(reminderKey);
-        await sendActivityReminder(
-          link.telegram_chat_id,
-          activity,
-          diffMinutes,
-          trip
-        );
+        // 5. Only send if less than 50% packed
+        if (pct < 50) {
+          sentReminders.add(reminderKey);
+          await sendPackingNudge(link.telegram_chat_id, trip, packed, total, pct);
+        }
       }
     }
+    
+    // (Keep your existing 30-min activity reminder logic here if you have it)
+  }
+}
+
+async function sendPackingNudge(
+  chatId: number,
+  trip: any,
+  packed: number,
+  total: number,
+  pct: number
+) {
+  const message =
+    `🎒 *Packing Check-in*\n\n` +
+    `Your trip to *${trip.plan.destination}* starts in 3 days! ✈️\n\n` +
+    `I noticed you're only *${pct}%* packed (${packed}/${total} items).\n\n` +
+    `Need a hand? Open your checklist to see what's missing:\n` +
+    `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/checklist/${trip.id}\n\n` +
+    `Don't leave it to the last minute! 😉`;
+
+  try {
+    await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+    console.log(`🎒 Packing nudge sent to chat ${chatId} (${pct}% packed)`);
+  } catch (e: any) {
+    console.error('Failed to send packing nudge:', e.message);
   }
 }
 
@@ -575,10 +590,14 @@ export function getBot() {
           .eq('trip_id', link.trip_id);
 
         console.log(`📸 Photo saved for trip ${link.trip_id}. Total: ${count}`);
+        
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+        
+        // 1. Send a text reply with the link
         await reply(
-          `📸 Saved! You now have ${count} photo${
-            count === 1 ? '' : 's'
-          } in your recap.\n\nSend more, or ask me anything about your trip.`
+          `📸 *Saved to your trip album!* (${count} photo${count === 1 ? '' : 's'} total)\n\n` +
+          `[👉 Tap here to view your album](${appUrl}/recap/${link.trip_id})\n\n` +
+          `Send more photos anytime, or ask me anything about your trip.`
         );
       } catch (e: any) {
         console.error('Photo handler error:', e);
@@ -606,8 +625,42 @@ export function getBot() {
       return;
     }
 
-    // ─── DIRECT CHECKLIST HANDLING (bypass AI) ───
+
     const lowerText = text.toLowerCase();
+    // ─── DIRECT ALBUM HANDLING (bypass AI) ───
+    const isAlbumRequest = 
+      lowerText.includes('album') || 
+      lowerText.includes('recap') || 
+      lowerText.includes('my photos');
+
+    if (isAlbumRequest) {
+      console.log('📸 ALBUM REQUEST TRIGGERED');
+
+      // Check if they actually have photos
+      const { count } = await supabase
+        .from('photos')
+        .select('*', { count: 'exact', head: true })
+        .eq('trip_id', link.trip_id);
+
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+      
+      if (!count || count === 0) {
+        await reply(
+          `You haven't sent any photos yet! Send me a few photos 📸 and I'll generate a beautiful album for you.`
+        );
+        return;
+      }
+
+      await reply(
+        `📸 You have *${count} photos* in your trip album!\n\n` +
+        `I've turned them into a beautiful, shareable magazine-style story.\n\n` +
+        `[👉 Tap here to open your Trip Album](${appUrl}/recap/${link.trip_id})\n\n` +
+        `You can share it directly to Instagram or WhatsApp from there!`
+      );
+      return;
+    }
+    
+    // ─── DIRECT CHECKLIST HANDLING (bypass AI) ───
     const isChecklistQuestion =
       lowerText.includes('checklist') ||
       lowerText.includes('packing list') ||
