@@ -78,12 +78,12 @@ body {
 }
 
 /* Force all headings to be dark */
-h1, h2, h3, h4, h5, h6 {
+/* h1, h2, h3, h4, h5, h6 {
   color: #111827 !important;
   -webkit-text-fill-color: #111827 !important;
   opacity: 1 !important;
   font-weight: 700 !important;
-}
+} */
 
 /* Ensure any unlabeled text is dark by default */
 body {
@@ -142,8 +142,12 @@ body {
   }
 
   /* Force headings black (mobile Safari quirk) */
-  h1, h2, h3, h4, h5, h6 {
-    color: #000000 !important;
-    -webkit-text-fill-color: #000000 !important;
+  h1:not(.text-white),
+  h2:not(.text-white),
+  h3:not(.text-white),
+  h4:not(.text-white),
+  h5:not(.text-white),
+  h6:not(.text-white) {
+    color: #111827;
   }
 }
