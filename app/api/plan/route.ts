@@ -120,6 +120,8 @@ H) DAY NUMBERS: MUST be sequential integers starting from 1 (1, 2, 3, ... ${form
 
 I) DAY 1 SEQUENCING: First activity of Day 1 must be scheduled AFTER the flight arrives (allow 2+ hours for immigration, baggage, transport). If arrival is 16:45, first activity is 18:30+.
 
+J) TERMS & CONDITIONS: For every activity, generate a realistic 1-sentence refund policy based on standard industry practices (e.g., 'Free cancellation up to 24 hours', 'Non-refundable', '50% refund up to 48 hours').
+
 Return ONLY valid JSON, no markdown:
 {
   "destination": "string",
@@ -156,7 +158,7 @@ Return ONLY valid JSON, no markdown:
   },
   "dailyPlans": [
     { "day": 1, "date": "string", "theme": "string", "activities": [
-      { "time": "09:00", "title": "string", "description": "string", "cost_usd": 0, "transport": { "recommended": "car", "car": { "available": true, "duration": "25 min", "distance": "12 km", "cost": 5, "details": "string" }, "public": { "available": true, "duration": "35 min", "cost": 3, "details": "string", "line": "string", "frequency": "string", "walkTime": "string" } }, "next": "string", "kidFriendly": true, "elderlyFriendly": true }
+      { "time": "09:00", "title": "string", "description": "string", "cost_usd": 0, "terms": "string (e.g., 'Free cancellation up to 48 hours prior. 50% refund within 24 hours.')", "transport": { "recommended": "car", "car": { "available": true, "duration": "25 min", "distance": "12 km", "cost": 5, "details": "string" }, "public": { "available": true, "duration": "35 min", "cost": 3, "details": "string", "line": "string", "frequency": "string", "walkTime": "string" } }, "next": "string", "kidFriendly": true, "elderlyFriendly": true }
     ] }
   ],
   "parentsDayOff": null

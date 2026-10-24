@@ -1175,6 +1175,15 @@ function ActivityModal({
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
               About this activity
             </p>
+            {/* Terms & Conditions */}
+            <div className="mt-4">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                Terms & Refund Policy
+              </p>
+              <p className="text-xs text-gray-500 bg-gray-50 p-2 rounded border border-gray-200">
+                {a.terms || 'Standard Cathay Holidays cancellation policy applies. Free cancellation up to 48 hours prior to the activity.'}
+              </p>
+            </div>
             <textarea
               value={editedDesc}
               onChange={(e) => setEditedDesc(e.target.value)}
