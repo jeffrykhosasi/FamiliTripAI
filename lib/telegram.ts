@@ -475,7 +475,7 @@ export function getBot() {
         remember(chatId, 'model', response);
         await reply(response);
       }
-    } catch (err) {
+    } catch (err: any) {
       if (err.message === 'TIMEOUT') {
         console.log('⏱️ Gemini slow — racing against OpenRouter...');
         try {
