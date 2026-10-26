@@ -8,51 +8,26 @@ export default function BookPage() {
   const id = params.id as string;
   const [status, setStatus] = useState<'loading' | 'booking' | 'done' | 'error'>('loading');
   const [bookings, setBookings] = useState<any[]>([]);
+  const [trip, setTrip] = useState<any>(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
     async function run() {
       setStatus('loading');
       try {
-        // Fetch trip + bookings in parallel
-        const [tripRes, bookingsRes] = await Promise.all([
-          fetch(`/api/plan/${id}`),
-          fetch('/api/bookings', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ tripId: id }),
-          }),
-        ]);
+        // 1. Fetch trip data (for flight info)
+        const tripRes = await fetch(`/api/plan/${id}`);
+        const tripData = await tripRes.json();
+        if (!tripData.error) setTrip(tripData);
 
-        const trip = await tripRes.json();
-        const bookingsData = await bookingsRes.json();
-
-        if (trip.error) {
-          setError(trip.error);
-          setStatus('error');
-          return;
-        }
-
-        // If already booked — use the parallel-fetched bookings immediately
-        if (trip.status === 'booked') {
-          if (bookingsData.error) {
-            setError(bookingsData.error);
-            setStatus('error');
-          } else {
-            setBookings(bookingsData.bookings || []);
-            setStatus('done');
-          }
-          return;
-        }
-
-        // Not booked yet — now actually create bookings
-        setStatus('booking');
+        // 2. Fetch bookings
         const res = await fetch('/api/book', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ tripId: id }),
         });
         const data = await res.json();
+        
         if (data.error) {
           setError(data.error);
           setStatus('error');
@@ -68,22 +43,7 @@ export default function BookPage() {
     run();
   }, [id]);
 
-  if (status === 'loading') {
-    return (
-      <main className="min-h-screen bg-gradient-to-br from-sky-50 to-indigo-100 flex items-center justify-center p-8">
-        <div className="bg-white rounded-2xl shadow-xl p-12 text-center max-w-md">
-          <div
-            className="animate-spin w-16 h-16 border-4 border-gray-200 rounded-full mx-auto mb-6"
-            style={{ borderTopColor: '#0d4d3d' }}
-          />
-          <h1 className="text-2xl font-bold mb-2">Loading...</h1>
-          <p className="text-gray-500">Just a moment.</p>
-        </div>
-      </main>
-    );
-  }
-
-  if (status === 'booking') {
+  if (status === 'loading' || status === 'booking') {
     return (
       <main className="min-h-screen bg-gradient-to-br from-sky-50 to-indigo-100 flex items-center justify-center p-8">
         <div className="bg-white rounded-2xl shadow-xl p-12 text-center max-w-md">
@@ -92,9 +52,7 @@ export default function BookPage() {
             style={{ borderTopColor: '#0d4d3d' }}
           />
           <h1 className="text-2xl font-bold mb-2">Booking everything...</h1>
-          <p className="text-gray-500">
-            We're confirming your activities and reservations.
-          </p>
+          <p className="text-gray-500">We're confirming your activities and reservations.</p>
         </div>
       </main>
     );
@@ -107,10 +65,7 @@ export default function BookPage() {
           <p className="text-4xl mb-4">😔</p>
           <h1 className="text-xl font-bold mb-2">Booking failed</h1>
           <p className="text-red-600 text-sm mb-4">{error}</p>
-          <a
-            href="/trips"
-            className="inline-block border border-gray-300 px-4 py-2 rounded-lg text-sm"
-          >
+          <a href="/trips" className="inline-block border border-gray-300 px-4 py-2 rounded-lg text-sm">
             ← My trips
           </a>
         </div>
@@ -118,9 +73,13 @@ export default function BookPage() {
     );
   }
 
+  // Calculate total miles earned (HK$15 = 1 mile)
+  const totalMilesEarned = Math.floor(
+    bookings.reduce((sum, b) => sum + (b.details?.cost_usd || 0), 0) / 15
+  );
+
   return (
     <main className="min-h-screen bg-gradient-to-br from-sky-50 to-indigo-100">
-      {/* Top nav */}
       <nav className="bg-white border-b border-gray-200">
         <div className="max-w-3xl mx-auto px-6 py-4 flex items-center justify-between">
           <a href="/" className="text-xl font-bold" style={{ color: '#0d4d3d' }}>
@@ -142,24 +101,46 @@ export default function BookPage() {
           <p className="text-gray-600 mb-1">
             {bookings.length} activities confirmed for your trip.
           </p>
+          
+          {/* The Miles Badge */}
           <div className="inline-flex items-center gap-2 mt-3 px-4 py-2 rounded-full" style={{ backgroundColor: '#fef3c7' }}>
             <span className="text-sm font-semibold text-amber-800">
-              ✨ You've earned{' '}
-              {Math.floor(
-                bookings.reduce(
-                  (sum, b) => sum + (b.details?.cost_usd || 0),
-                  0
-                ) / 15
-              ).toLocaleString('en-US')}{' '}
-              miles
+              ✨ You've earned {totalMilesEarned.toLocaleString('en-US')} miles
             </span>
           </div>
+
           <p className="text-sm text-gray-400 mt-3">
             Your trip assistant is ready to keep you on track.
           </p>
         </div>
 
-        {/* Telegram connect with QR */}
+        {/* Flight Details Card */}
+        {trip?.plan?.flight && (
+          <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
+            <h2 className="font-semibold mb-4">Your Flight</h2>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg flex items-center justify-center text-xl" style={{ backgroundColor: '#0d4d3d' }}>
+                  ✈️
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#0d4d3d' }}>
+                    {trip.plan.flight.airline || 'Cathay Pacific'}
+                  </p>
+                  <p className="font-bold text-lg">
+                    {trip.plan.flight.flightNumber || 'CX'} · {trip.plan.flight.route}
+                  </p>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="font-semibold">{trip.plan.flight.departureTime} → {trip.plan.flight.arrivalTime}</p>
+                <p className="text-xs text-gray-500">{trip.plan.flight.duration}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Telegram Connect with QR Code */}
         <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
           <div className="text-center mb-6">
             <p className="text-4xl mb-3">📱</p>
@@ -189,36 +170,21 @@ export default function BookPage() {
             <div>
               <div className="space-y-4">
                 <div className="flex gap-3">
-                  <div
-                    className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold"
-                    style={{ backgroundColor: '#0d4d3d' }}
-                  >
-                    1
-                  </div>
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold" style={{ backgroundColor: '#0d4d3d' }}>1</div>
                   <div>
                     <p className="font-semibold text-sm">Scan the QR code</p>
                     <p className="text-xs text-gray-500">Opens Telegram on your phone</p>
                   </div>
                 </div>
                 <div className="flex gap-3">
-                  <div
-                    className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold"
-                    style={{ backgroundColor: '#0d4d3d' }}
-                  >
-                    2
-                  </div>
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold" style={{ backgroundColor: '#0d4d3d' }}>2</div>
                   <div>
                     <p className="font-semibold text-sm">Tap START</p>
                     <p className="text-xs text-gray-500">Links your trip automatically</p>
                   </div>
                 </div>
                 <div className="flex gap-3">
-                  <div
-                    className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold"
-                    style={{ backgroundColor: '#0d4d3d' }}
-                  >
-                    3
-                  </div>
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold" style={{ backgroundColor: '#0d4d3d' }}>3</div>
                   <div>
                     <p className="font-semibold text-sm">Chat anytime</p>
                     <p className="text-xs text-gray-500">Ask questions, send photos</p>
@@ -227,9 +193,7 @@ export default function BookPage() {
               </div>
 
               <div className="mt-6 pt-4 border-t border-gray-200">
-                <p className="text-xs text-gray-500 mb-2 text-center">
-                  Already on this device?
-                </p>
+                <p className="text-xs text-gray-500 mb-2 text-center">Already on this device?</p>
                 <a
                   href={`https://t.me/familytrip_ai_bot?start=${id}`}
                   target="_blank"
@@ -240,52 +204,30 @@ export default function BookPage() {
                   💬 Open in Telegram
                 </a>
               </div>
-
-              <div className="mt-4 bg-blue-50 rounded-lg p-3">
-                <p className="text-xs font-semibold text-blue-800 mb-1">
-                  💡 What can you ask?
-                </p>
-                <p className="text-xs text-blue-900">
-                  "What's my plan for today?" · "I'm tired, any lighter options?" ·
-                  "Best ramen nearby?"
-                </p>
-              </div>
             </div>
           </div>
         </div>
 
-        {/* Booking confirmations */}
         <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
           <h2 className="font-semibold mb-4">Booking confirmations</h2>
-          {bookings.length === 0 && (
-            <p className="text-sm text-gray-500">No bookings found.</p>
-          )}
+          {bookings.length === 0 && <p className="text-sm text-gray-500">No bookings found.</p>}
           {bookings.map((b, i) => (
-            <div
-              key={i}
-              className="flex justify-between items-center py-3 border-b last:border-0"
-            >
-              <div className="flex-1 min-w-0 pr-3">
+            <div key={i} className="flex justify-between items-center py-2 border-b last:border-0">
+              <div>
                 <p className="font-medium text-sm">
                   Day {b.details?.day} · {b.details?.time} — {b.details?.title}
                 </p>
                 {b.details?.cost_usd ? (
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    HK${b.details.cost_usd}
-                    <span className="text-amber-700 font-medium ml-2">
-                      ✨ {Math.floor(b.details.cost_usd / 15)} miles
-                    </span>
-                  </p>
+                  <p className="text-xs text-gray-500">${b.details.cost_usd}</p>
                 ) : null}
               </div>
-              <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded font-mono whitespace-nowrap">
+              <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded font-mono">
                 {b.confirmation_id}
               </span>
             </div>
           ))}
         </div>
 
-        {/* Next steps */}
         <div className="bg-white rounded-2xl shadow-xl p-6">
           <h2 className="font-semibold mb-4">Next steps</h2>
 
@@ -319,14 +261,6 @@ export default function BookPage() {
               style={{ borderColor: '#0d4d3d', color: '#0d4d3d' }}
             >
               🎬 Recap
-            </a>
-          </div>
-          <div className="text-center mt-4">
-            <a
-              href="/trips"
-              className="text-sm text-gray-500 hover:text-gray-700 underline"
-            >
-              ← All my trips
             </a>
           </div>
         </div>

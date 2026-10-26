@@ -7,16 +7,15 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
 const GEMINI_MODELS = [
   'gemini-3.5-flash-lite',
+  'gemini-3.1-flash-lite',
   'gemini-3.5-flash',
   'gemini-3.8-flash',
 ];
 
-// ─── Prevent unhandled rejections from race-losing promises ───
+// ─── Prevent unhandled rejections ───
 process.on('unhandledRejection', (reason: any) => {
   const msg = reason?.message || String(reason);
-  if (msg === 'CANCELLED' || msg.includes('aborted')) {
-    return;
-  }
+  if (msg === 'CANCELLED' || msg.includes('aborted')) return;
   console.error('Unhandled rejection:', reason);
 });
 
@@ -26,143 +25,61 @@ const sentReminders = new Set<string>();
 
 function startReminderScheduler() {
   if (reminderInterval) return;
-
-  console.log('⏰ Starting reminder scheduler (checks every 60s)');
-
+  console.log('⏰ Starting reminder scheduler');
   reminderInterval = setInterval(async () => {
-    try {
-      await checkAndSendReminders();
-    } catch (e: any) {
-      console.error('Reminder check failed:', e.message);
-    }
-  }, 60 * 1000);
+    try { await checkAndSendReminders(); } catch (e: any) { }
+  }, 60000);
 }
 
 async function checkAndSendReminders() {
-  const { data: links } = await supabase
-    .from('telegram_links')
-    .select('trip_id, telegram_chat_id');
-
+  const { data: links } = await supabase.from('telegram_links').select('trip_id, telegram_chat_id');
   if (!links || links.length === 0) return;
 
   const now = new Date();
-  now.setHours(0, 0, 0, 0); // Start of today
-
   for (const link of links) {
-    // 1. Get trip
-    const { data: trip } = await supabase
-      .from('trips')
-      .select('*')
-      .eq('id', link.trip_id)
-      .single();
-
+    const { data: trip } = await supabase.from('trips').select('*').eq('id', link.trip_id).single();
     if (!trip?.plan || !trip.plan.startDate) continue;
 
-    // 2. Calculate days until trip
     const tripStart = new Date(trip.plan.startDate);
     tripStart.setHours(0, 0, 0, 0);
-    
-    const diffTime = tripStart.getTime() - now.getTime();
-    const daysUntil = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
 
-    // 3. Check if trip is exactly 3 days away
-    const reminderKey = `${link.trip_id}-packing-3days`;
-    if (daysUntil === 3 && !sentReminders.has(reminderKey)) {
-      
-      // 4. Get checklist to calculate progress
-      const { data: checklistItems } = await supabase
-        .from('checklists')
-        .select('packed')
-        .eq('trip_id', link.trip_id);
+    const currentDayNum = Math.floor((todayStart.getTime() - tripStart.getTime()) / 86400000) + 1;
+    const currentDay = (trip.plan.dailyPlans || []).find((d: any) => d.day === currentDayNum);
+    if (!currentDay) continue;
 
-      if (checklistItems && checklistItems.length > 0) {
-        const total = checklistItems.length;
-        const packed = checklistItems.filter((i: any) => i.packed).length;
-        const pct = Math.round((packed / total) * 100);
+    for (let i = 0; i < (currentDay.activities || []).length; i++) {
+      const activity = currentDay.activities[i];
+      const timeMatch = (activity.time || '').match(/(\d{1,2}):(\d{2})/);
+      if (!timeMatch) continue;
 
-        // 5. Only send if less than 50% packed
-        if (pct < 50) {
-          sentReminders.add(reminderKey);
-          await sendPackingNudge(link.telegram_chat_id, trip, packed, total, pct);
-        }
+      const actTime = new Date(todayStart);
+      actTime.setHours(parseInt(timeMatch[1]), parseInt(timeMatch[2]), 0, 0);
+      const diffMinutes = (actTime.getTime() - now.getTime()) / 60000;
+      const reminderKey = `${link.trip_id}-${currentDayNum}-${i}`;
+
+      if (diffMinutes >= 28 && diffMinutes <= 32 && !sentReminders.has(reminderKey)) {
+        sentReminders.add(reminderKey);
+        const t = activity.transport || {};
+        const transportInfo = t.recommended === 'car' ? `🚗 Drive: ${t.car?.details}` : `🚇 ${t.public?.details}`;
+        const msg = `⏰ *Heads up — ${Math.round(diffMinutes)} minutes*\n\n*${activity.title}* at ${activity.time}\n\n${transportInfo}`;
+        await bot.sendMessage(link.telegram_chat_id, msg, { parse_mode: 'Markdown' }).catch(() => {});
       }
     }
-    
-    // (Keep your existing 30-min activity reminder logic here if you have it)
-  }
-}
-
-async function sendPackingNudge(
-  chatId: number,
-  trip: any,
-  packed: number,
-  total: number,
-  pct: number
-) {
-  const message =
-    `🎒 *Packing Check-in*\n\n` +
-    `Your trip to *${trip.plan.destination}* starts in 3 days! ✈️\n\n` +
-    `I noticed you're only *${pct}%* packed (${packed}/${total} items).\n\n` +
-    `Need a hand? Open your checklist to see what's missing:\n` +
-    `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/checklist/${trip.id}\n\n` +
-    `Don't leave it to the last minute! 😉`;
-
-  try {
-    await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
-    console.log(`🎒 Packing nudge sent to chat ${chatId} (${pct}% packed)`);
-  } catch (e: any) {
-    console.error('Failed to send packing nudge:', e.message);
-  }
-}
-
-async function sendActivityReminder(
-  chatId: number,
-  activity: any,
-  minutesUntil: number,
-  trip: any
-) {
-  const t = activity.transport || {};
-  const transportInfo =
-    t.recommended === 'car' && t.car?.available
-      ? `🚗 Drive: ${t.car.details}`
-      : t.public?.available
-      ? `🚇 ${t.public.details}`
-      : '';
-
-  const message =
-    `⏰ *Heads up — ${Math.round(minutesUntil)} minutes*\n\n` +
-    `*${activity.title}* at ${activity.time}\n\n` +
-    (activity.description ? `${activity.description}\n\n` : '') +
-    (transportInfo ? `${transportInfo}\n\n` : '') +
-    `_Ask me "what's today?" for full details._`;
-
-  try {
-    await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
-    console.log(`⏰ Reminder sent to chat ${chatId}: ${activity.title}`);
-  } catch (e: any) {
-    console.error('Failed to send reminder:', e.message);
   }
 }
 
 // ─── Bot state ───
-const globalForBot = globalThis as unknown as {
-  telegramBot: any;
-};
-
+const globalForBot = globalThis as unknown as { telegramBot: any };
 let bot: any = globalForBot.telegramBot || null;
 const userChatIds = new Set<number>();
-
-const conversationHistory: Record<
-  number,
-  Array<{ role: 'user' | 'model'; text: string }>
-> = {};
+const conversationHistory: Record<number, Array<{ role: 'user' | 'model'; text: string }>> = {};
 
 function remember(chatId: number, role: 'user' | 'model', text: string) {
   if (!conversationHistory[chatId]) conversationHistory[chatId] = [];
   conversationHistory[chatId].push({ role, text });
-  if (conversationHistory[chatId].length > 10) {
-    conversationHistory[chatId] = conversationHistory[chatId].slice(-10);
-  }
+  if (conversationHistory[chatId].length > 10) conversationHistory[chatId] = conversationHistory[chatId].slice(-10);
 }
 
 function getHistory(chatId: number) {
@@ -178,24 +95,29 @@ function buildSystemPrompt(trip: any, checklistItems: any[] = []): string {
   const today = new Date().toISOString().slice(0, 10);
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
-  const itineraryText = days
-    .map((d: any) => {
-      const acts = (d.activities || [])
-        .map(
-          (a: any) =>
-            `    ${a.time} — ${a.title} (HK$${a.cost_usd || 0})\n      ${a.description || ''}`
-        )
-        .join('\n');
-      return `Day ${d.day} (${d.date || ''}) — ${d.theme || ''}\n${acts}`;
-    })
-    .join('\n\n');
+  const itineraryText = days.map((d: any) => {
+    const acts = (d.activities || []).map((a: any) => `    ${a.time} — ${a.title} (HK$${a.cost_usd || 0})\n      ${a.description || ''}`).join('\n');
+    return `Day ${d.day} (${d.date || ''}) — ${d.theme || ''}\n${acts}`;
+  }).join('\n\n');
 
-  const travelerNames =
-    travelers.map((t: any) => `${t.name} (${t.role})`).join(', ') || 'Family';
+  const flightInfo = plan.flight ? `
+FLIGHT DETAILS:
+- Airline: ${plan.flight.airline || 'Cathay Pacific'}
+- Route: ${plan.flight.route || `${trip.destination} route`}
+- Departure: ${plan.flight.departureTime || 'Unknown'}
+- Arrival: ${plan.flight.arrivalTime || 'Unknown'}
+- Duration: ${plan.flight.duration || 'Unknown'}` : '\nFLIGHT DETAILS: Not yet booked.';
 
-  const rentalCar = plan.rentalCar?.recommended
-    ? `\nRENTAL CAR: ${plan.rentalCar.type} · HK$${plan.rentalCar.dailyPrice}/day`
-    : '';
+  const travelerNames = travelers.map((t: any) => `${t.name} (${t.role})`).join(', ') || 'Family';
+  const rentalCar = plan.rentalCar?.recommended ? `\nRENTAL CAR: ${plan.rentalCar.type} · HK$${plan.rentalCar.dailyPrice}/day` : '';
+
+  const checklistText = checklistItems.length > 0
+    ? Object.entries(checklistItems.reduce((acc: any, item: any) => {
+        if (!acc[item.traveler]) acc[item.traveler] = [];
+        acc[item.traveler].push(item.item);
+        return acc;
+      }, {})).map(([traveler, items]: any) => `  ${traveler}: ${items.join(', ')}`).join('\n')
+    : '(No checklist generated yet)';
 
   return `You are the family's travel concierge. You know their trip AND you're a knowledgeable local expert on their destination.
 
@@ -204,18 +126,23 @@ DESTINATION: ${plan.destination || trip.destination}
 DATES: ${plan.startDate} → ${plan.returnDate} (${plan.days} days)
 TRAVELERS: ${travelerNames}
 BUDGET: HK$${trip.budget_usd || plan.budgetBreakdown?.total || 0}${rentalCar}
+${flightInfo}
 
 THEIR FULL ITINERARY:
 ${itineraryText || '(No activities planned yet)'}
 
 BUDGET BREAKDOWN:
-${Object.entries(budget)
-  .map(([k, v]) => `  ${k}: HK$${v}`)
-  .join('\n')}
+${Object.entries(budget).map(([k, v]) => `  ${k}: HK$${v}`).join('\n')}
+
+FAMILY PACKING CHECKLIST SUMMARY:
+${checklistText}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 CRITICAL INSTRUCTIONS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+**NEVER output generic system messages like "User Safety: safe" or "Response Safety".**
+If a user asks to change, cancel, or modify a booking, you MUST reply to them warmly and add the [CREATE_TICKET] tag at the end.
 
 The itinerary above is a SCHEDULE. It tells you what they have BOOKED. It is NOT the sum total of everything they might want to know.
 
@@ -239,16 +166,19 @@ The itinerary above is a SCHEDULE. It tells you what they have BOOKED. It is NOT
 
 **The rule:** Ask yourself, "What does the USER want to know?"
 
-**When to use the itinerary:**
+**When to use the itinerary/flight:**
 - "What's today?" / "What's my schedule?" → use itinerary
+- "What is my flight?" → READ from the FLIGHT DETAILS block above. Do NOT create a ticket or say it's missing.
 - "How much does this cost?" → use itinerary
-- "Who's traveling?" → use travelers list
 
 **When to use your own knowledge:**
 - "What should I see/do/eat in [destination]?" → local knowledge
 - "What's popular/famous/must-see?" → local knowledge
 - "Is it safe?" / "Is it worth it?" / "Should I?" → local knowledge
 - "What's the weather?" → general knowledge
+
+**Combining both is best:**
+If the answer connects to their itinerary, mention it: "You're already going to X — great choice! Also try Y nearby."
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 HANDLING REQUESTS BEYOND YOUR CAPABILITY
@@ -267,7 +197,10 @@ CRITICAL: When you handle such a request, you MUST end your reply with the exact
 EXAMPLES:
 
 User: "Can I cancel my Disney ticket and get a refund?"
-✅ RIGHT: "Of course — I've flagged this to our admin team and they'll reach out to you within 2 hours with refund options. Is there a specific reason for the cancellation I should pass along?\n\n[CREATE_TICKET]"
+✅ RIGHT: "Of course — I've flagged this to our admin team and they'll reach out to you within 2 hours with refund options for your Disney VIP booking. Is there a specific reason for the cancellation I should pass along?\n\n[CREATE_TICKET]"
+
+User: "I want to change my flight."
+✅ RIGHT: "Got it — I've notified our admin team and they'll contact you within 2 hours to arrange the flight change. Do you have a preferred new date in mind?\n\n[CREATE_TICKET]"
 
 RULES:
 - Never say "I can't help with that"
@@ -292,167 +225,110 @@ LINKS:
 - Recap: ${appUrl}/recap/${trip.id}`;
 }
 
-// ─── Gemini with 15s budget ───
-async function askGemini(
-  systemPrompt: string,
-  history: Array<{ role: 'user' | 'model'; text: string }>,
-  userMessage: string
-): Promise<string> {
+async function askGemini(systemPrompt: string, history: any[], userMessage: string): Promise<string> {
   const startTime = Date.now();
-  const MAX_WAIT_MS = 15000;
+  const MAX_WAIT_MS = 20000;
   let lastError: any = null;
 
   for (const model of GEMINI_MODELS) {
-    const elapsed = Date.now() - startTime;
-    if (elapsed > MAX_WAIT_MS) {
-      console.log(`⏰ Gemini budget exceeded (${elapsed}ms)`);
-      break;
-    }
-
-    const remainingMs = MAX_WAIT_MS - elapsed;
+    const remainingMs = MAX_WAIT_MS - (Date.now() - startTime);
+    if (remainingMs <= 0) break;
 
     try {
-      const contents: any[] = [];
-      contents.push({ role: 'user', parts: [{ text: systemPrompt }] });
-      contents.push({
-        role: 'model',
-        parts: [
-          { text: 'Understood. I am ready to assist this family with their trip.' },
-        ],
-      });
+      const contents: any[] = [
+        { role: 'user', parts: [{ text: systemPrompt }] },
+        { role: 'model', parts: [{ text: 'Understood.' }] },
+        ...history.map((h) => ({ role: h.role, parts: [{ text: h.text }] })),
+        { role: 'user', parts: [{ text: userMessage }] },
+      ];
 
-      for (const h of history) {
-        contents.push({ role: h.role, parts: [{ text: h.text }] });
-      }
-      contents.push({ role: 'user', parts: [{ text: userMessage }] });
-
-      console.log(`🔄 Gemini ${model}... (timeout: ${remainingMs}ms)`);
-
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('GEMINI_TIMEOUT')), remainingMs)
-      );
-
-      const geminiPromise = ai.models.generateContent({
-        model,
-        contents,
-      });
-
+      const timeoutPromise = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('GEMINI_TIMEOUT')), remainingMs));
+      const geminiPromise = ai.models.generateContent({ model, contents });
+      
       const response: any = await Promise.race([geminiPromise, timeoutPromise]);
-
       const text = response.text ?? '';
       if (!text) throw new Error('Empty response');
+      
       console.log(`✅ Gemini ${model} succeeded in ${Date.now() - startTime}ms`);
       return text.trim();
     } catch (err: any) {
       lastError = err;
-      const msg = String(err?.message || '');
       const status = err?.status || err?.error?.code || 0;
-
-      if (msg === 'GEMINI_TIMEOUT') {
-        console.log(`⏰ Gemini ${model} timed out at ${Date.now() - startTime}ms`);
-        break;
-      }
-
-      const isBusy =
-        msg.includes('503') ||
-        msg.includes('UNAVAILABLE') ||
-        msg.includes('429') ||
-        msg.includes('high demand') ||
-        status === 503 ||
-        status === 429;
-
-      console.log(
-        `❌ Gemini ${model} failed: status=${status} busy=${isBusy} (${Date.now() - startTime}ms)`
-      );
-
-      if (!isBusy) throw err;
-
-      const afterAttempt = Date.now() - startTime;
-      if (afterAttempt + 3000 < MAX_WAIT_MS) {
-        await new Promise((r) => setTimeout(r, 1000));
-      }
+      const isBusy = err.message?.includes('503') || err.message?.includes('UNAVAILABLE') || status === 503;
+      if (!isBusy && err.message !== 'GEMINI_TIMEOUT') throw err;
+      if (err.message === 'GEMINI_TIMEOUT') break;
+      await new Promise((r) => setTimeout(r, 1000));
     }
   }
-
   throw lastError;
 }
 
-// ─── OpenRouter fallback ───
-async function askOpenRouter(
-  systemPrompt: string,
-  history: Array<{ role: 'user' | 'model'; text: string }>,
-  userMessage: string
-): Promise<string> {
+async function askOpenRouter(systemPrompt: string, history: any[], userMessage: string): Promise<string> {
   const OpenAI = (await import('openai')).default;
-  const openrouter = new OpenAI({
-    apiKey: process.env.OPENROUTER_API_KEY!,
-    baseURL: 'https://openrouter.ai/api/v1',
-  });
+  const openrouter = new OpenAI({ apiKey: process.env.OPENROUTER_API_KEY!, baseURL: 'https://openrouter.ai/api/v1' });
 
   const messages: any[] = [
     { role: 'system', content: systemPrompt },
-    ...history.map((h) => ({
-      role: h.role === 'model' ? 'assistant' : 'user',
-      content: h.text,
-    })),
+    ...history.map((h) => ({ role: h.role === 'model' ? 'assistant' : 'user', content: h.text })),
     { role: 'user', content: userMessage },
   ];
 
-  const FREE_MODELS = [
-    'google/gemma-4-31b-it:free',
-    'meta-llama/llama-3.3-70b-instruct:free',
-    'deepseek/deepseek-chat-v3.1:free',
-    'qwen/qwen-2.5-72b-instruct:free',
-  ];
-
+  const FREE_MODELS = ['openrouter/free'];
   let lastError: any = null;
 
   for (const model of FREE_MODELS) {
     try {
       console.log(`🔄 OpenRouter trying ${model}...`);
-
+      
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
-
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
       const response = await openrouter.chat.completions.create(
-        {
-          model,
-          messages,
-          max_tokens: 800,
-        },
+        { model, messages, max_tokens: 800 },
         { signal: controller.signal }
       );
       clearTimeout(timeoutId);
-
       const text = response.choices[0]?.message?.content || '';
       if (!text) throw new Error('Empty response');
-
+      
       console.log(`✅ OpenRouter succeeded with ${model}`);
       return text;
     } catch (err: any) {
       lastError = err;
-      console.log(`❌ OpenRouter ${model} failed: ${err.message}`);
+      console.log(`❌ OpenRouter failed: ${err.message}`);
     }
   }
-
   throw lastError;
 }
 
-// ─── Simple honest fallback ───
 function localFallback(trip: any, text: string): string {
-  return (
-    `Sorry — I'm having a brief connection issue and couldn't process that just now. 🙏\n\n` +
-    `Could you try again in a moment?\n\n` +
-    `If it keeps happening, you can reach the full itinerary anytime here:\n` +
-    `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/itinerary/${trip.id}`
-  );
+  const plan = trip.plan || {};
+  const days = plan.dailyPlans || plan.days || [];
+  const lower = text.toLowerCase();
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+
+  if (lower.includes('today') || lower.includes('plan') || lower.includes('schedule')) {
+    const start = new Date(plan.startDate || '');
+    const todayNum = Math.floor((new Date().getTime() - start.getTime()) / 86400000) + 1;
+    const todayDay = days.find((d: any) => d.day === todayNum) || days[0];
+    if (todayDay) {
+      const acts = (todayDay.activities || []).map((a: any) => `⏰ ${a.time} — ${a.title}`).join('\n');
+      return `📍 Day ${todayDay.day} — ${todayDay.theme || ''}\n\n${acts}`;
+    }
+  }
+  
+  if (lower.includes('flight')) {
+    return plan.flight ? `Your flight is with ${plan.flight.airline}, departing at ${plan.flight.departureTime} and arriving at ${plan.flight.arrivalTime}.` : `I couldn't find flight details.`;
+  }
+
+  if (lower.includes('weather') || lower.includes('rain')) return `I can't check the live forecast right now. Please check your weather app! ☀️`;
+  if (lower.includes('eat') || lower.includes('food')) return `Check your itinerary for today's dining plans! 🍜`;
+  if (lower.includes('cancel') || lower.includes('refund') || lower.includes('change')) return `I've noted this! Because I'm having a brief connection delay, our admin team will review this and contact you within 2 hours. 🙏`;
+
+  return `Sorry — I'm having a brief connection issue. 🙏\n\nView your itinerary here:\n${appUrl}/itinerary/${trip.id}`;
 }
 
-// ─── Bot initialization ───
 export function getBot() {
   if (bot) return bot;
-
-  console.log('🤖 Starting Telegram bot with Gemini + OpenRouter...');
   bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN!, { polling: true });
   globalForBot.telegramBot = bot;
 
@@ -461,452 +337,125 @@ export function getBot() {
     const text = msg.text || '';
     const firstName = msg.from?.first_name || 'there';
     const hasPhoto = msg.photo && msg.photo.length > 0;
-
     userChatIds.add(chatId);
 
     const reply = async (t: string) => {
-      try {
-        await bot.sendMessage(chatId, t);
-      } catch (e: any) {
-        console.error('Reply failed:', e.message);
-      }
+      try { await bot.sendMessage(chatId, t, { parse_mode: 'Markdown' }); } catch (e) {}
     };
 
-    // ─── /start TRIP_ID ───
     if (text.startsWith('/start')) {
-      const parts = text.split(' ');
-      const tripId = parts[1];
+      const tripId = text.split(' ')[1];
+      if (!tripId) return reply(`Hi ${firstName}! Use the link from your booking page.`);
+      const { data: trip } = await supabase.from('trips').select('*').eq('id', tripId).single();
+      if (!trip) return reply(`Trip not found.`);
 
-      if (!tripId) {
-        await reply(
-          `Hi ${firstName}! 👋\n\nTo connect a trip, use the link from your booking confirmation page.`
-        );
-        return;
-      }
-
-      const { data: trip } = await supabase
-        .from('trips')
-        .select('id, destination, start_date, days')
-        .eq('id', tripId)
-        .single();
-
-      if (!trip) {
-        await reply(`I couldn't find that trip. Please try the link again.`);
-        return;
-      }
-
-      await supabase
-        .from('telegram_links')
-        .delete()
-        .eq('telegram_chat_id', chatId);
-
-      const { error: linkError } = await supabase
-        .from('telegram_links')
-        .insert({
-          trip_id: tripId,
-          telegram_chat_id: chatId,
-          telegram_username: msg.from?.username || null,
-          telegram_first_name: firstName,
-        });
-
-      if (linkError) {
-        console.error('Link save failed:', linkError);
-        await reply(`Sorry, couldn't save: ${linkError.message}`);
-        return;
-      }
-
+      await supabase.from('telegram_links').delete().eq('telegram_chat_id', chatId);
+      await supabase.from('telegram_links').insert({ trip_id: tripId, telegram_chat_id: chatId, telegram_first_name: firstName });
+      
       console.log(`✅ Linked chat ${chatId} to trip ${tripId}`);
+
       conversationHistory[chatId] = [];
-
-      await reply(
-        `✨ Hi ${firstName}! I'm your personal concierge for your ${trip.destination} trip.\n\n` +
-          `Ask me anything:\n` +
-          `• "What's my plan for today?"\n` +
-          `• "What's on my mom's checklist?"\n` +
-          `• "Where should we eat?"\n` +
-          `• "What's the weather like?"\n\n` +
-          `Or send me a photo 📸 to add to your recap.`
-      );
-      return;
+      return reply(`✨ Hi ${firstName}! I'm your personal concierge for your ${trip.plan?.destination || 'trip'}.\n\nAsk me anything:\n• "What's my plan for today?"\n• "What's on my mom's checklist?"\n• "Where should we eat?"\n• "What's the weather like?"\n\nOr send me a photo 📸 to add to your recap.`);
     }
 
-    // ─── Photo handling ───
+    const { data: link } = await supabase.from('telegram_links').select('trip_id').eq('telegram_chat_id', chatId).single();
+    if (!link) return reply(`Please link your trip from the booking page first.`);
+    const { data: trip } = await supabase.from('trips').select('*').eq('id', link.trip_id).single();
+    if (!trip) return reply(`Trip lost. Please re-link.`);
+
     if (hasPhoto) {
-      const largest = msg.photo[msg.photo.length - 1];
-      const fileId = largest.file_id;
-      const caption = msg.caption || '';
-
-      const { data: link } = await supabase
-        .from('telegram_links')
-        .select('trip_id')
-        .eq('telegram_chat_id', chatId)
-        .single();
-
-      if (!link) {
-        await reply(
-          `You're not linked to a trip yet. Use the link from your booking page.`
-        );
-        return;
-      }
-
       try {
-        const fileInfo: any = await bot.getFile(fileId);
-        const filePath = fileInfo?.file_path;
-
-        if (!filePath) {
-          await reply(`Couldn't fetch the photo. Try again.`);
-          return;
-        }
-
-        const fileUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${filePath}`;
-        const imageRes = await fetch(fileUrl);
-        const buffer = Buffer.from(await imageRes.arrayBuffer());
-
-        const storagePath = `${link.trip_id}/${Date.now()}-${fileId}.jpg`;
-        const { error: uploadError } = await supabase.storage
-          .from('trip-photos')
-          .upload(storagePath, buffer, { contentType: 'image/jpeg' });
-
-        if (uploadError) {
-          console.error('Storage upload failed:', uploadError);
-          await reply(`Upload failed: ${uploadError.message}`);
-          return;
-        }
-
-        const { data: urlData } = supabase.storage
-          .from('trip-photos')
-          .getPublicUrl(storagePath);
-
-        await supabase.from('photos').insert({
-          trip_id: link.trip_id,
-          url: urlData.publicUrl,
-          caption: caption || null,
-          source: 'telegram',
-        });
-
-        const { count } = await supabase
-          .from('photos')
-          .select('*', { count: 'exact', head: true })
-          .eq('trip_id', link.trip_id);
-
-        console.log(`📸 Photo saved for trip ${link.trip_id}. Total: ${count}`);
+        const largest = msg.photo[msg.photo.length - 1];
+        const fileInfo: any = await bot.getFile(largest.file_id);
+        const fileUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${fileInfo.file_path}`;
+        const buffer = Buffer.from(await (await fetch(fileUrl)).arrayBuffer());
+        const storagePath = `${trip.id}/${Date.now()}-${largest.file_id}.jpg`;
         
+        await supabase.storage.from('trip-photos').upload(storagePath, buffer, { contentType: 'image/jpeg' });
+        const { data: urlData } = supabase.storage.from('trip-photos').getPublicUrl(storagePath);
+        await supabase.from('photos').insert({ trip_id: trip.id, url: urlData.publicUrl, source: 'telegram' });
+        const { count } = await supabase.from('photos').select('*', { count: 'exact', head: true }).eq('trip_id', trip.id);
+
         const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-        
-        // 1. Send a text reply with the link
-        await reply(
-          `📸 *Saved to your trip album!* (${count} photo${count === 1 ? '' : 's'} total)\n\n` +
-          `[👉 Tap here to view your album](${appUrl}/recap/${link.trip_id})\n\n` +
-          `Send more photos anytime, or ask me anything about your trip.`
-        );
+        return reply(`📸 *Saved!* (${count} total)\n\n[👉 View album](${appUrl}/recap/${trip.id})`);
       } catch (e: any) {
-        console.error('Photo handler error:', e);
-        await reply(`Something went wrong with the photo: ${e.message}`);
+        return reply(`Failed to save photo: ${e.message}`);
       }
-      return;
     }
 
-    // ─── Everything else → AI ───
-    if (!text) {
-      await reply(`Send me text or a photo 📸`);
-      return;
-    }
-
-    const { data: link } = await supabase
-      .from('telegram_links')
-      .select('trip_id')
-      .eq('telegram_chat_id', chatId)
-      .single();
-
-    if (!link) {
-      await reply(
-        `You're not linked to a trip yet. Use the link from your booking page to get started.`
-      );
-      return;
-    }
-
+    if (!text) return reply(`Send me text or a photo 📸`);
 
     const lowerText = text.toLowerCase();
-    // ─── DIRECT ALBUM HANDLING (bypass AI) ───
-    const isAlbumRequest = 
-      lowerText.includes('album') || 
-      lowerText.includes('recap') || 
-      lowerText.includes('my photos');
-
-    if (isAlbumRequest) {
-      console.log('📸 ALBUM REQUEST TRIGGERED');
-
-      // Check if they actually have photos
-      const { count } = await supabase
-        .from('photos')
-        .select('*', { count: 'exact', head: true })
-        .eq('trip_id', link.trip_id);
-
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-      
-      if (!count || count === 0) {
-        await reply(
-          `You haven't sent any photos yet! Send me a few photos 📸 and I'll generate a beautiful album for you.`
-        );
-        return;
-      }
-
-      await reply(
-        `📸 You have *${count} photos* in your trip album!\n\n` +
-        `I've turned them into a beautiful, shareable magazine-style story.\n\n` +
-        `[👉 Tap here to open your Trip Album](${appUrl}/recap/${link.trip_id})\n\n` +
-        `You can share it directly to Instagram or WhatsApp from there!`
-      );
-      return;
-    }
     
-    // ─── DIRECT CHECKLIST HANDLING (bypass AI) ───
-    const isChecklistQuestion =
-      lowerText.includes('checklist') ||
-      lowerText.includes('packing list') ||
-      lowerText.includes('what should i pack') ||
-      lowerText.includes('what to pack') ||
-      (lowerText.includes('pack') &&
-        (lowerText.includes('mom') ||
-          lowerText.includes('dad') ||
-          lowerText.includes('kid') ||
-          lowerText.includes('grandma') ||
-          lowerText.includes('grandpa') ||
-          lowerText.includes('grandmom') ||
-          lowerText.includes('granddad')));
-
-    if (isChecklistQuestion) {
-      console.log('✅ CHECKLIST HANDLER TRIGGERED for:', text);
-
-      const { data: checklistData, error: checklistError } = await supabase
-        .from('checklists')
-        .select('traveler, item, packed')
-        .eq('trip_id', link.trip_id)
-        .order('traveler');
-
-      console.log('📋 Checklist query result:', {
-        count: checklistData?.length,
-        error: checklistError?.message,
-      });
-
-      if (!checklistData || checklistData.length === 0) {
-        await reply(
-          `You haven't generated a packing list yet. Open your trip → Family Checklist → click "✨ AI-generate checklist" first.`
-        );
-        return;
+    // Direct Checklist Handler
+    if (lowerText.includes('checklist') || lowerText.includes('pack')) {
+      const { data: checklistData } = await supabase.from('checklists').select('traveler, item, packed').eq('trip_id', trip.id);
+      if (!checklistData || checklistData.length === 0) return reply(`You haven't generated a packing list yet.`);
+      
+      const travelers = Array.from(new Set(checklistData.map((i: any) => i.traveler)));
+      let target = travelers.find(t => lowerText.includes(t.toLowerCase()));
+      
+      if (target) {
+        const items = checklistData.filter(i => i.traveler === target);
+        const list = items.map((i: any) => `${i.packed ? '✅' : '⬜'} ${i.item}`).join('\n');
+        return reply(`*${target}'s Packing List:*\n\n${list}`);
       }
-
-      const travelers = Array.from(
-        new Set(checklistData.map((i: any) => i.traveler))
-      ) as string[];
-
-      let targetTraveler: string | null = null;
-
-      // Match travelers by name — check LONGEST names first to avoid "grandmom" matching "mom"
-      const sortedTravelers = [...travelers].sort(
-        (a, b) => b.length - a.length
-      );
-      for (const t of sortedTravelers) {
-        const tName = t.toLowerCase().split(' ')[0];
-        const wordBoundary = new RegExp(`\\b${tName}\\b`, 'i');
-        if (wordBoundary.test(lowerText)) {
-          targetTraveler = t;
-          break;
-        }
-      }
-
-      // Special aliases (grandparents FIRST because they may contain "mom"/"dad")
-      if (!targetTraveler) {
-        const aliases: Array<[string[], RegExp]> = [
-          [
-            ['grandmom', 'grand mom', 'grandma', 'grandmother'],
-            /grandma|grandmother|grandmom|grand\s*mom/i,
-          ],
-          [
-            ['granddad', 'grand dad', 'grandad', 'grandpa', 'grandfather'],
-            /grandpa|grandfather|granddad|grand\s*dad|grandad/i,
-          ],
-          [
-            ['kid', 'child', 'children', 'son', 'daughter'],
-            /kid|child|son|daughter/i,
-          ],
-          [['mom', 'mother', 'mum'], /mom|mother|mum/i],
-          [['dad', 'father'], /dad|father/i],
-        ];
-        for (const [keywords, regex] of aliases) {
-          if (keywords.some((k) => lowerText.includes(k))) {
-            const found = travelers.find((t) => regex.test(t));
-            if (found) {
-              targetTraveler = found;
-              break;
-            }
-          }
-        }
-      }
-
-      console.log(`🎯 Matched traveler: ${targetTraveler || '(summary)'}`);
-
-      // Specific traveler
-      if (targetTraveler) {
-        const items = checklistData.filter(
-          (i: any) => i.traveler === targetTraveler
-        );
-        const packed = items.filter((i: any) => i.packed).length;
-        const list = items
-          .map((i: any) => `${i.packed ? '✅' : '⬜'} ${i.item}`)
-          .join('\n');
-        await reply(
-          `Here's ${targetTraveler}'s packing list:\n\n${list}\n\nYou've packed ${packed} of ${items.length} items.`
-        );
-        return;
-      }
-
-      // Summary of all travelers
-      const summary = travelers
-        .map((traveler: string) => {
-          const items = checklistData.filter(
-            (i: any) => i.traveler === traveler
-          );
-          const packed = items.filter((i: any) => i.packed).length;
-          const list = items
-            .slice(0, 5)
-            .map((i: any) => `  ${i.packed ? '✅' : '⬜'} ${i.item}`)
-            .join('\n');
-          const more =
-            items.length > 5 ? `\n  ...and ${items.length - 5} more` : '';
-          return `👤 ${traveler} (${packed}/${items.length}):\n${list}${more}`;
-        })
-        .join('\n\n');
-
-      await reply(
-        `Here's your family packing checklist:\n\n${summary}\n\nAsk "what's on [name]'s checklist?" for details.`
-      );
-      return;
+      return reply(`Ask me for a specific person's checklist (e.g., "mom's checklist").`);
     }
 
-    // ─── Everything else → AI ───
-    const { data: trip } = await supabase
-      .from('trips')
-      .select('*')
-      .eq('id', link.trip_id)
-      .single();
-
-    const { data: checklistItems } = await supabase
-      .from('checklists')
-      .select('traveler, item, packed')
-      .eq('trip_id', link.trip_id)
-      .order('traveler');
-
-    if (!trip) {
-      await reply(`I lost your trip. Please re-link from the booking page.`);
-      return;
+    // Direct Album Handler
+    if (lowerText.includes('album') || lowerText.includes('recap') || lowerText.includes('photo')) {
+      const { count } = await supabase.from('photos').select('*', { count: 'exact', head: true }).eq('trip_id', trip.id);
+      if (!count) return reply(`You haven't sent any photos yet!`);
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+      return reply(`📸 You have *${count} photos*!\n\n[👉 Tap here to open your Trip Album](${appUrl}/recap/${trip.id})`);
     }
 
-    try {
-      await bot.sendChatAction(chatId, 'typing');
-    } catch {}
+    // AI Handler
+    try { await bot.sendChatAction(chatId, 'typing'); } catch {}
+    const { data: checklistData } = await supabase.from('checklists').select('traveler, item, packed').eq('trip_id', trip.id);
+    
+    const systemPrompt = buildSystemPrompt(trip, checklistData || []);
+    const history = getHistory(chatId).slice(-8);
 
-    try {
-      const systemPrompt = buildSystemPrompt(trip, checklistItems || []);
-      const history = getHistory(chatId).slice(-8);
-      let response = '';
-      let winner: 'gemini' | 'openrouter' | 'local' | null = null;
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log(`📨 Message received: "${text}"`);
 
-      let cancelled = false;
+    let cancelled = false;
 
-      const geminiCall = (async (): Promise<string | null> => {
-        const t0 = Date.now();
-        try {
-          const result = await askGemini(systemPrompt, history, text);
-          if (cancelled) {
-            console.log(`🚫 Gemini finished but was cancelled (${Date.now() - t0}ms)`);
-            return null;
-          }
-          console.log(`✅ Gemini won race in ${Date.now() - t0}ms`);
-          return result;
-        } catch (e: any) {
-          if (cancelled) {
-            console.log(`🚫 Gemini cancelled (${Date.now() - t0}ms)`);
-            return null;
-          }
-          console.log(`❌ Gemini failed: ${e.message}`);
-          throw e;
-        }
-      })().catch((err) => {
-        console.log(`🚫 Gemini swallowed error: ${err.message}`);
-        return null;
-      });
-
-      const openRouterCall = (async (): Promise<string | null> => {
-        const t0 = Date.now();
-        try {
-          const result = await askOpenRouter(systemPrompt, history, text);
-          if (cancelled) {
-            console.log(`🚫 OpenRouter finished but was cancelled (${Date.now() - t0}ms)`);
-            return null;
-          }
-          console.log(`✅ OpenRouter won race in ${Date.now() - t0}ms`);
-          return result;
-        } catch (e: any) {
-          if (cancelled) {
-            console.log(`🚫 OpenRouter cancelled (${Date.now() - t0}ms)`);
-            return null;
-          }
-          console.log(`❌ OpenRouter failed: ${e.message}`);
-          throw e;
-        }
-      })().catch((err) => {
-        console.log(`🚫 OpenRouter swallowed error: ${err.message}`);
-        return null;
-      });
-
+    const geminiCall = (async () => {
       try {
-        const result = await Promise.race([
-          geminiCall,
-          new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
-        ]);
-        if (result) {
-          response = result;
-          winner = 'gemini';
-        } else {
-          throw new Error('HEADSTART_EXPIRED');
-        }
-      } catch (headErr: any) {
-        if (headErr.message === 'HEADSTART_EXPIRED') {
-          console.log('⏱️ Gemini slow — racing against OpenRouter...');
-          try {
-            const result = await Promise.race([geminiCall, openRouterCall]);
-            if (result) {
-              response = result;
-              winner = 'openrouter';
-            } else {
-              throw new Error('BOTH_NULL');
-            }
-          } catch {
-            console.log('❌ Both failed — using local fallback');
-            response = localFallback(trip, text);
-            winner = 'local';
-          }
-        } else {
-          console.log('❌ Gemini errored fast — trying OpenRouter...');
-          const result = await openRouterCall;
-          if (result) {
-            response = result;
-            winner = 'openrouter';
-          } else {
-            console.log('❌ OpenRouter failed — using local fallback');
-            response = localFallback(trip, text);
-            winner = 'local';
-          }
-        }
+        const res = await askGemini(systemPrompt, history, text);
+        if (!cancelled) console.log(`🏆 Winner: Gemini`);
+        return res;
+      } catch (e: any) {
+        if (!cancelled) console.log(`❌ Gemini failed: ${e.message}`);
+        throw e;
       }
+    })();
 
+    const openRouterCall = (async () => {
+      try {
+        const res = await askOpenRouter(systemPrompt, history, text);
+        if (!cancelled) console.log(`🏆 Winner: OpenRouter`);
+        return res;
+      } catch (e: any) {
+        if (!cancelled) console.log(`❌ OpenRouter failed: ${e.message}`);
+        throw e;
+      }
+    })();
+
+    try {
+      // 1. Try Gemini
+      let response = await Promise.race([
+        geminiCall,
+        new Promise<string>((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), 5000))
+      ]);
       cancelled = true;
-      console.log(`🏆 Winner: ${winner}`);
-
+      
+      // Check for ticket BEFORE remembering and replying
       if (response.includes('[CREATE_TICKET]')) {
         const cleanResponse = response.replace(/\[CREATE_TICKET\]/g, '').trim();
-
         try {
           await supabase.from('support_tickets').insert({
             trip_id: trip.id,
@@ -916,10 +465,8 @@ export function getBot() {
             status: 'open',
           });
           console.log(`🎫 Support ticket created for chat ${chatId}`);
-        } catch (e: any) {
-          console.error('Failed to create ticket:', e.message);
-        }
-
+        } catch (e: any) { console.error('Failed to create ticket:', e.message); }
+        
         remember(chatId, 'user', text);
         remember(chatId, 'model', cleanResponse);
         await reply(cleanResponse);
@@ -928,16 +475,74 @@ export function getBot() {
         remember(chatId, 'model', response);
         await reply(response);
       }
-    } catch (e: any) {
-      console.error('Chat error:', e);
-      await reply(localFallback(trip, text));
+    } catch (err) {
+      if (err.message === 'TIMEOUT') {
+        console.log('⏱️ Gemini slow — racing against OpenRouter...');
+        try {
+          let response = await Promise.race([geminiCall, openRouterCall]);
+          cancelled = true;
+
+          if (response.includes('[CREATE_TICKET]')) {
+            const cleanResponse = response.replace(/\[CREATE_TICKET\]/g, '').trim();
+            try {
+              await supabase.from('support_tickets').insert({
+                trip_id: trip.id,
+                telegram_chat_id: chatId,
+                telegram_username: msg.from?.username || null,
+                message: text,
+                status: 'open',
+              });
+              console.log(`🎫 Support ticket created for chat ${chatId}`);
+            } catch (e: any) { console.error('Failed to create ticket:', e.message); }
+            
+            remember(chatId, 'user', text);
+            remember(chatId, 'model', cleanResponse);
+            await reply(cleanResponse);
+          } else {
+            remember(chatId, 'user', text);
+            remember(chatId, 'model', response);
+            await reply(response);
+          }
+        } catch {
+          console.log('🛟 Using local fallback');
+          await reply(localFallback(trip, text));
+        }
+      } else {
+        try {
+          let response = await openRouterCall;
+          cancelled = true;
+
+          if (response.includes('[CREATE_TICKET]')) {
+            const cleanResponse = response.replace(/\[CREATE_TICKET\]/g, '').trim();
+            try {
+              await supabase.from('support_tickets').insert({
+                trip_id: trip.id,
+                telegram_chat_id: chatId,
+                telegram_username: msg.from?.username || null,
+                message: text,
+                status: 'open',
+              });
+              console.log(`🎫 Support ticket created for chat ${chatId}`);
+            } catch (e: any) { console.error('Failed to create ticket:', e.message); }
+            
+            remember(chatId, 'user', text);
+            remember(chatId, 'model', cleanResponse);
+            await reply(cleanResponse);
+          } else {
+            remember(chatId, 'user', text);
+            remember(chatId, 'model', response);
+            await reply(response);
+          }
+        } catch {
+          console.log('🛟 Using local fallback');
+          await reply(localFallback(trip, text));
+        }
+      }
     }
   });
 
-  bot.on('polling_error', (error: any) => {
-    if (!error.message?.includes('409')) {
-      console.log('Telegram polling error:', error.message);
-    }
+  bot.on('polling_error', (e: any) => {
+    if (!e.message?.includes('409')) console.log('Polling error:', e.message);
   });
 
   console.log('🤖 Telegram bot is running...');
@@ -945,18 +550,8 @@ export function getBot() {
   return bot;
 }
 
-export function rememberUser(chatId: number) {
-  userChatIds.add(chatId);
-}
-
 export function broadcast(message: string) {
   if (userChatIds.size === 0) return 0;
-  for (const chatId of userChatIds) {
-    bot.sendMessage(chatId, message);
-  }
-  return userChatIds.size;
-}
-
-export function getUserCount() {
+  for (const chatId of userChatIds) bot.sendMessage(chatId, message);
   return userChatIds.size;
 }
